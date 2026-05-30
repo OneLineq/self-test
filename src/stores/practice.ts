@@ -1,0 +1,188 @@
+// ============================================================
+// 刷题助手 — 练习 Store (Pinia)
+// ============================================================
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import { invoke } from '@tauri-apps/api/tauri'
+import type { Question, PracticeMode } from '../types'
+
+export const usePracticeStore = defineStore('practice', () => {
+  const questions = ref<Question[]>([])
+  const currentIndex = ref(0)
+  const mode = ref<PracticeMode>('sequential')
+  const userAnswers = ref<Map<string, string>>(new Map())
+  const showResult = ref<Map<string, boolean>>(new Map())
+  const loading = ref(false)
+  /** 侧边栏已确认退出，子页面路由守卫跳过 */
+  const skipLeaveConfirm = ref(false)
+
+  /** 当前题目 */
+  const currentQuestion = computed(() => questions.value[currentIndex.value] ?? null)
+
+  /** 总题数 */
+  const totalCount = computed(() => questions.value.length)
+
+  /** 已做题数 */
+  const answeredCount = computed(() => userAnswers.value.size)
+
+  /** 正确数 */
+  const correctCount = computed(() => {
+    let count = 0
+    userAnswers.value.forEach((answer, qid) => {
+      const q = questions.value.find(q => q.id === qid)
+      if (q) {
+        const correct = Array.isArray(q.answer)
+          ? q.answer.join(',') === answer
+          : q.answer === answer
+        if (correct) count++
+      }
+    })
+    return count
+  })
+
+  /** 加载题目 */
+  async function loadQuestions(
+    bankId: string,
+    practiceMode: PracticeMode,
+    questionTypes?: string[],
+    limit?: number,
+  ) {
+    loading.value = true
+    mode.value = practiceMode
+    currentIndex.value = 0
+    userAnswers.value = new Map()
+    showResult.value = new Map()
+    try {
+      questions.value = await invoke<Question[]>('get_practice_questions', {
+        bankId,
+        mode: practiceMode,
+        questionTypes: questionTypes && questionTypes.length > 0 ? questionTypes : null,
+        limit: limit ?? null,
+      })
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** 提交答案 */
+  async function submitAnswer(questionId: string, answer: string) {
+    userAnswers.value.set(questionId, answer)
+    showResult.value.set(questionId, true)
+
+    const q = questions.value.find(q => q.id === questionId)
+    if (!q) return
+
+    const correct = Array.isArray(q.answer)
+      ? q.answer.join(',') === answer
+      : q.answer === answer
+
+    await invoke('record_practice', {
+      questionId,
+      bankId: q.bank_id,
+      userAnswer: answer,
+      isCorrect: correct,
+      mode: mode.value,
+    })
+  }
+
+  /** 记录做题（模拟考试交卷用） */
+  async function submitExamAnswers() {
+    for (const [qid, answer] of userAnswers.value.entries()) {
+      const q = questions.value.find(q => q.id === qid)
+      if (!q) continue
+      const correct = Array.isArray(q.answer)
+        ? q.answer.join(',') === answer
+        : q.answer === answer
+      await invoke('record_practice', {
+        questionId: qid,
+        bankId: q.bank_id,
+        userAnswer: answer,
+        isCorrect: correct,
+        mode: 'exam',
+      })
+    }
+  }
+
+  /** 下一题 */
+  function next() {
+    if (currentIndex.value < questions.value.length - 1) {
+      currentIndex.value++
+    }
+  }
+
+  /** 上一题 */
+  function prev() {
+    if (currentIndex.value > 0) {
+      currentIndex.value--
+    }
+  }
+
+  /** 跳转到指定题 */
+  function goTo(index: number) {
+    if (index >= 0 && index < questions.value.length) {
+      currentIndex.value = index
+    }
+  }
+
+  /** 判断选项是否正确 */
+  function isOptionCorrect(question: Question, optionIndex: number): boolean {
+    const correctAnswer = question.answer
+    const optionLetter = String.fromCharCode(65 + optionIndex) // A, B, C, D...
+    if (Array.isArray(correctAnswer)) {
+      return correctAnswer.includes(optionLetter)
+    }
+    return correctAnswer === optionLetter
+  }
+
+  /** 判断用户选择是否正确 */
+  function isAnswerCorrect(questionId: string): boolean {
+    const q = questions.value.find(q => q.id === questionId)
+    const ans = userAnswers.value.get(questionId)
+    if (!q || ans === undefined) return false
+    if (Array.isArray(q.answer)) {
+      return q.answer.join(',') === ans
+    }
+    return q.answer === ans
+  }
+
+  /** 获取用户的选项字母列表 */
+  function getUserSelectedLetters(answer: string): string[] {
+    return answer.split(',').filter(Boolean)
+  }
+
+  /** 获取错题ID列表 */
+  function getWrongQuestionIds(): string[] {
+    const wrong: string[] = []
+    for (const q of questions.value) {
+      const ans = userAnswers.value.get(q.id)
+      if (ans !== undefined && !isAnswerCorrect(q.id)) {
+        wrong.push(q.id)
+      }
+    }
+    return wrong
+  }
+
+  return {
+    questions,
+    currentIndex,
+    mode,
+    userAnswers,
+    showResult,
+    loading,
+    skipLeaveConfirm,
+    currentQuestion,
+    totalCount,
+    answeredCount,
+    correctCount,
+    loadQuestions,
+    submitAnswer,
+    submitExamAnswers,
+    next,
+    prev,
+    goTo,
+    isOptionCorrect,
+    isAnswerCorrect,
+    getUserSelectedLetters,
+    getWrongQuestionIds,
+  }
+})

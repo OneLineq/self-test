@@ -1,0 +1,60 @@
+name: Build arm64 deb
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: Install arm64 deps
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo apt update
+          sudo apt install -y \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            libgtk-3-dev:arm64 libwebkit2gtk-4.0-dev:arm64 \
+            libappindicator3-dev:arm64 librsvg2-dev:arm64 \
+            libssl-dev:arm64 libsoup2.4-dev:arm64
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - name: Build frontend
+        run: |
+          npm install
+          npm run build
+      - name: Cross-compile Rust
+        run: |
+          mkdir -p .cargo
+          echo '[target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"' > .cargo/config.toml
+          cd src-tauri
+          PKG_CONFIG_ALLOW_CROSS=1 \
+          cargo build --target aarch64-unknown-linux-gnu --release
+      - name: Package deb
+        run: |
+          mkdir -p selftest_0.9.0_arm64/DEBIAN
+          mkdir -p selftest_0.9.0_arm64/usr/local/bin
+          cp src-tauri/target/aarch64-unknown-linux-gnu/release/selftest \
+             selftest_0.9.0_arm64/usr/local/bin/
+          cat > selftest_0.9.0_arm64/DEBIAN/control << CONTROL
+          Package: selftest
+          Version: 0.9.0
+          Architecture: arm64
+          Maintainer: oneline <oneline@example.com>
+          Depends: libwebkit2gtk-4.0-37, libgtk-3-0, libappindicator3-1
+          Section: education
+          Priority: optional
+          Description: 刷题助手 - Quiz practice app
+          CONTROL
+          dpkg-deb --build selftest_0.9.0_arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: selftest-arm64-deb
+          path: selftest_*.deb

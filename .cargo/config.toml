@@ -1,0 +1,1 @@
+linker = "aarch64-linux-gnu-gcc"
