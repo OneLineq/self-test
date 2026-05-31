@@ -14,10 +14,12 @@ jobs:
       - name: Install arm64 deps
         run: |
           sudo dpkg --add-architecture arm64
-          # 添加 ports.ubuntu.com arm64 源（GitHub 默认镜像没有 arm64 包）
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64-ports.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64-ports.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-security main universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64-ports.list
+          # 替换默认源为 ports.ubuntu.com（同时支持 amd64 和 arm64）
+          sudo rm -f /etc/apt/sources.list
+          sudo rm -f /etc/apt/sources.list.d/*.list
+          echo "deb http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" | sudo tee /etc/apt/sources.list
+          echo "deb http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
           sudo apt update
           sudo apt install -y \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
