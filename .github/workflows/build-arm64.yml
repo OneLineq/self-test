@@ -1,8 +1,6 @@
 name: Build arm64 deb
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
 
 jobs:
