@@ -33,14 +33,12 @@ jobs:
           echo '[target.aarch64-unknown-linux-gnu]
           linker = "aarch64-linux-gnu-gcc"' > .cargo/config.toml
           cd src-tauri
-          PKG_CONFIG_ALLOW_CROSS=1 \
-          cargo build --target aarch64-unknown-linux-gnu --release
+          PKG_CONFIG_ALLOW_CROSS=1 cargo build --target aarch64-unknown-linux-gnu --release
       - name: Package deb
         run: |
           mkdir -p selftest_0.9.0_arm64/DEBIAN
           mkdir -p selftest_0.9.0_arm64/usr/local/bin
-          cp src-tauri/target/aarch64-unknown-linux-gnu/release/selftest \
-             selftest_0.9.0_arm64/usr/local/bin/
+          cp src-tauri/target/aarch64-unknown-linux-gnu/release/selftest selftest_0.9.0_arm64/usr/local/bin/
           cat > selftest_0.9.0_arm64/DEBIAN/control << CONTROL
           Package: selftest
           Version: 0.9.0
