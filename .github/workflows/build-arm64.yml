@@ -14,7 +14,6 @@ jobs:
       - name: Install arm64 deps
         run: |
           sudo dpkg --add-architecture arm64
-          # 直接覆写 sources.list，每个源明确限定架构
           sudo rm -rf /etc/apt/sources.list /etc/apt/sources.list.d/*.list
           echo "deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse" | sudo tee /etc/apt/sources.list
           echo "deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
@@ -25,7 +24,8 @@ jobs:
           sudo apt update
           sudo apt install -y \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            libgtk-3-dev:arm64 libwebkit2gtk-4.1-dev:arm64 \
+            libgtk-3-dev:arm64 libwebkit2gtk-4.0-dev:arm64 \
+            libjavascriptcoregtk-4.0-dev:arm64 \
             libappindicator3-dev:arm64 librsvg2-dev:arm64 \
             libssl-dev:arm64 libsoup2.4-dev:arm64
       - uses: dtolnay/rust-toolchain@stable
@@ -55,7 +55,7 @@ jobs:
           Version: 0.9.0
           Architecture: arm64
           Maintainer: oneline <oneline@example.com>
-          Depends: libwebkit2gtk-4.1-0, libgtk-3-0, libappindicator3-1
+          Depends: libwebkit2gtk-4.0-37, libgtk-3-0, libappindicator3-1
           Section: education
           Priority: optional
           Description: 刷题助手 - Quiz practice app
