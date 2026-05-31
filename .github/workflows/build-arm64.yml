@@ -46,10 +46,13 @@ jobs:
           cargo build --target aarch64-unknown-linux-gnu --release
       - name: Package deb
         run: |
+          echo "=== 列出 target 目录中的二进制 ==="
+          ls -la src-tauri/target/aarch64-unknown-linux-gnu/release/
+          BIN=$(find src-tauri/target/aarch64-unknown-linux-gnu/release/ -maxdepth 1 -type f -executable ! -name "*.d" | head -1)
+          echo "找到二进制: $BIN"
           mkdir -p selftest_0.9.0_arm64/DEBIAN
           mkdir -p selftest_0.9.0_arm64/usr/local/bin
-          cp src-tauri/target/aarch64-unknown-linux-gnu/release/selftest \
-             selftest_0.9.0_arm64/usr/local/bin/
+          cp "$BIN" selftest_0.9.0_arm64/usr/local/bin/selftest
           cat > selftest_0.9.0_arm64/DEBIAN/control << CONTROL
           Package: selftest
           Version: 0.9.0
