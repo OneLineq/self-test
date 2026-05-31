@@ -14,16 +14,14 @@ jobs:
       - name: Install arm64 deps
         run: |
           sudo dpkg --add-architecture arm64
-          # 还原默认源（给 amd64 用）
-          sudo rm -f /etc/apt/sources.list
-          sudo rm -f /etc/apt/sources.list.d/*.list
-          sudo apt-add-repository -y "deb http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse"
-          sudo apt-add-repository -y "deb http://archive.ubuntu.com/ubuntu jammy-updates main restricted universe multiverse"
-          sudo apt-add-repository -y "deb http://archive.ubuntu.com/ubuntu jammy-security main restricted universe multiverse"
-          # 添加 arm64 专用源（只取 arm64 架构的包）
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64-ports.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64-ports.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-security main universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64-ports.list
+          # 直接覆写 sources.list，每个源明确限定架构
+          sudo rm -rf /etc/apt/sources.list /etc/apt/sources.list.d/*.list
+          echo "deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse" | sudo tee /etc/apt/sources.list
+          echo "deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-security main universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
           sudo apt update
           sudo apt install -y \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
