@@ -36,8 +36,10 @@ jobs:
 
       - name: Install Zig (pre-built binary, ~5 sec)
         run: |
+          sudo mkdir -p /usr/local/lib/zig
           curl -fsSL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz \
-            | sudo tar xJ -C /usr/local --strip-components=1
+            | sudo tar xJ -C /usr/local/lib/zig --strip-components=1
+          sudo ln -sf /usr/local/lib/zig/zig /usr/local/bin/zig
           zig version
 
       - name: Build frontend
