@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons-vue'
 import { usePracticeStore } from '../stores/practice'
 import { invoke } from '@tauri-apps/api/tauri'
+import { isChoiceType } from '../types'
 import type { Question } from '../types'
 
 const route = useRoute()
@@ -26,11 +27,12 @@ const settingStep = ref<'settings' | 'exam'>('settings')
 
 // 题库中现有的题型
 const availableTypes = ref<string[]>([])
-// 用户选择的题型（null = 全部）
-const selectedTypes = ref<string[]>([])
-// 题目数量
-const questionCount = ref(0)
-const maxCount = ref(0)
+// 各题型对应的题目总数
+const typeTotalCounts = ref<Record<string, number>>({})
+// 各题型要抽取的题目数
+const perTypeLimits = ref<Record<string, number>>({})
+/** 不定项模式：选择题不区分单选/多选，可自由选择一项或多项 */
+const indeterminateMode = ref(false)
 // 考试时间（分钟）
 const examMinutes = ref(30)
 
@@ -63,14 +65,20 @@ onMounted(async () => {
       questionTypes: null,
       limit: null,
     })
-    // 提取题型
-    const types = new Set(allQuestions.value.map((q) => q.type).filter(Boolean))
-    availableTypes.value = Array.from(types)
-    selectedTypes.value = Array.from(types) // 默认全选
-    maxCount.value = allQuestions.value.length
-    questionCount.value = maxCount.value
+    // 提取题型并按题型统计数量
+    const counts: Record<string, number> = {}
+    for (const q of allQuestions.value) {
+      if (q.type) {
+        counts[q.type] = (counts[q.type] || 0) + 1
+      }
+    }
+    availableTypes.value = Object.keys(counts).sort()
+    typeTotalCounts.value = { ...counts }
+    // 默认每种题型全部抽取
+    perTypeLimits.value = { ...counts }
     // 默认时间：每 5 题加 1 分钟，最少 5 分钟
-    examMinutes.value = Math.max(5, Math.ceil(maxCount.value / 5) * 1.5)
+    const totalQ = allQuestions.value.length
+    examMinutes.value = Math.max(5, Math.ceil(totalQ / 5) * 1.5)
     loading.value = false
   } catch (e) {
     message.error('加载题目失败')
@@ -107,17 +115,13 @@ onBeforeRouteLeave((_to, _from, next) => {
 
 // ===== 计算属性 =====
 
-const filteredCount = computed(() => {
-  if (selectedTypes.value.length === 0 || selectedTypes.value.length === availableTypes.value.length)
-    return maxCount.value
-  return allQuestions.value.filter((q) => selectedTypes.value.includes(q.type)).length
+/** 总共要抽取的题目数（各题型之和） */
+const totalSelectedCount = computed(() => {
+  return Object.values(perTypeLimits.value).reduce((sum, v) => sum + v, 0)
 })
 
-const actualCount = computed(() => {
-  if (questionCount.value >= maxCount.value || questionCount.value >= filteredCount.value)
-    return filteredCount.value
-  return questionCount.value
-})
+/** 题库总题数 */
+const totalQuestionsCount = computed(() => allQuestions.value.length)
 
 const timeDisplay = computed(() => {
   const m = examMinutes.value
@@ -128,8 +132,9 @@ const timeDisplay = computed(() => {
 })
 
 const timePerQuestion = computed(() => {
-  if (actualCount.value === 0) return 0
-  return Math.round((examMinutes.value * 60) / actualCount.value)
+  const count = totalSelectedCount.value
+  if (count === 0) return 0
+  return Math.round((examMinutes.value * 60) / count)
 })
 
 // ===== 开始考试 =====
@@ -138,13 +143,22 @@ async function startExam() {
   settingStep.value = 'exam'
   examSubmitted.value = false
 
-  const types = selectedTypes.value.length === 0 || selectedTypes.value.length === availableTypes.value.length
-    ? undefined
-    : selectedTypes.value
+  // 筛选出抽取数量 > 0 的题型
+  const ptl: Record<string, number> = {}
+  for (const [type, count] of Object.entries(perTypeLimits.value)) {
+    if (count > 0) ptl[type] = count
+  }
 
-  const limit = questionCount.value < maxCount.value ? questionCount.value : undefined
+  // 如果有题型没启用（count === 0），只传启用的题型
+  const activeTypes = Object.keys(ptl)
 
-  await store.loadQuestions(bankId, 'exam', types, limit)
+  await store.loadQuestions(
+    bankId,
+    'exam',
+    activeTypes.length > 0 ? activeTypes : undefined,
+    undefined,
+    ptl,
+  )
   remainingSeconds.value = examMinutes.value * 60
   startTimer()
 }
@@ -163,18 +177,17 @@ function startTimer() {
 function selectOption(questionId: string, optIndex: number) {
   if (examSubmitted.value) return
   const letter = String.fromCharCode(65 + optIndex)
-  // 判断本题是否为多选题
   const q = store.questions.find(q => q.id === questionId)
-  const isMulti = q ? Array.isArray(q.answer) : false
+  if (!q) return
+  const isChoice = isChoiceType(q.type)
+  // 不定项模式下的选择题 或 原有多选题：切换选中
+  const isMulti = (indeterminateMode.value && isChoice) || Array.isArray(q.answer)
   if (isMulti) {
-    // 多选题：切换选中状态
     let current = store.userAnswers.get(questionId) || ''
     const parts = current ? current.split(',').filter(Boolean) : []
     if (parts.includes(letter)) {
-      // 已选 → 取消
       store.userAnswers.set(questionId, parts.filter(p => p !== letter).join(','))
     } else {
-      // 未选 → 添加
       parts.push(letter)
       store.userAnswers.set(questionId, parts.join(','))
     }
@@ -250,44 +263,58 @@ function formatTime(seconds: number): string {
     <div v-else-if="settingStep === 'settings'" class="settings-container">
       <a-card title="考试设置" style="max-width: 600px; margin: 0 auto">
         <a-form layout="vertical">
-          <!-- 题型选择 -->
-          <a-form-item label="题型选择" v-if="availableTypes.length > 0">
+          <!-- 按题型抽取 -->
+          <a-form-item
+            label="各题型抽取数量"
+            v-if="availableTypes.length > 0"
+          >
             <template #extra>
-              共 {{ allQuestions.length }} 题，当前筛选后 {{ filteredCount }} 题
+              题库共 {{ totalQuestionsCount }} 题，当前共抽取 {{ totalSelectedCount }} 题
             </template>
-            <a-checkbox-group v-model:value="selectedTypes">
-              <a-checkbox
-                v-for="t in availableTypes"
-                :key="t"
-                :value="t"
-              >
-                <a-tag :color="typeColors[t] || 'default'">
-                  {{ typeLabels[t] || t }}
-                </a-tag>
-              </a-checkbox>
-            </a-checkbox-group>
-            <a-button
-              size="small"
-              style="margin-top: 8px"
-              @click="selectedTypes = selectedTypes.length === availableTypes.length ? [] : [...availableTypes]"
+            <div
+              v-for="t in availableTypes"
+              :key="t"
+              style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px"
             >
-              {{ selectedTypes.length === availableTypes.length ? '取消全选' : '全选' }}
-            </a-button>
+              <a-tag :color="typeColors[t] || 'default'" style="min-width: 60px; text-align: center">
+                {{ typeLabels[t] || t }}
+              </a-tag>
+              <a-slider
+                v-model:value="perTypeLimits[t]"
+                :min="0"
+                :max="typeTotalCounts[t]"
+                style="flex: 1; margin: 0"
+              />
+              <a-input-number
+                v-model:value="perTypeLimits[t]"
+                :min="0"
+                :max="typeTotalCounts[t]"
+                style="width: 72px"
+              />
+              <span style="color: #999; font-size: 12px; white-space: nowrap">
+                / {{ typeTotalCounts[t] }} 题
+              </span>
+            </div>
           </a-form-item>
 
-          <!-- 题目数量 -->
-          <a-form-item label="题目数量">
-            <a-slider
-              v-model:value="questionCount"
-              :min="1"
-              :max="maxCount"
-              :marks="{ 1: '1', [maxCount]: `${maxCount}` }"
-            />
-            <span v-if="questionCount >= maxCount" style="color: #999; font-size: 12px">
-              全部题目（{{ maxCount }} 题）
-            </span>
-            <span v-else style="color: #999; font-size: 12px">
-              抽取 {{ questionCount }} 题（共 {{ maxCount }} 题，筛选后 {{ filteredCount }} 题可用）
+          <!-- 没有题型时显示总题数 -->
+          <a-form-item label="题目数量" v-if="availableTypes.length === 0">
+            <span>共 {{ totalQuestionsCount }} 题</span>
+          </a-form-item>
+
+          <!-- 不定项模式 -->
+          <a-form-item>
+            <template #label>
+              <span>
+                不定项选择
+                <a-tooltip title="开启后，选择题不显示单选/多选标签，您可以自由选择一项或多项后提交">
+                  <ExclamationCircleOutlined style="color: #999; font-size: 12px" />
+                </a-tooltip>
+              </span>
+            </template>
+            <a-switch v-model:checked="indeterminateMode" />
+            <span style="margin-left: 8px; color: #999; font-size: 12px">
+              不区分单选/多选，可自由选择一项或多项
             </span>
           </a-form-item>
 
@@ -316,15 +343,14 @@ function formatTime(seconds: number): string {
           </a-form-item>
 
           <!-- 开始按钮 -->
-          <a-form-item>
+          <a-form-item style="text-align: center">
             <a-button
               type="primary"
               size="large"
-              block
-              :disabled="actualCount === 0"
+              :disabled="totalSelectedCount === 0"
               @click="startExam"
             >
-              开始考试（{{ actualCount }} 题，{{ timeDisplay }}）
+              开始考试（{{ totalSelectedCount }} 题，{{ timeDisplay }}）
             </a-button>
           </a-form-item>
         </a-form>
@@ -365,7 +391,10 @@ function formatTime(seconds: number): string {
         >
           <div class="question-stem">
             <span class="q-number">{{ qIdx + 1 }}.</span>
-            <a-tag v-if="q.type" :color="typeColors[q.type]" size="small" style="margin-right: 6px">
+            <a-tag v-if="indeterminateMode && isChoiceType(q.type)" color="orange" size="small" style="margin-right: 6px">
+              不定项选择
+            </a-tag>
+            <a-tag v-else-if="q.type" :color="typeColors[q.type]" size="small" style="margin-right: 6px">
               {{ typeLabels[q.type] || q.type }}
             </a-tag>
             {{ q.stem }}

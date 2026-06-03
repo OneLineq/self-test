@@ -15,6 +15,7 @@ import {
   FormOutlined,
   QuestionCircleOutlined,
   ExclamationCircleOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons-vue'
 import type { MenuProps } from 'ant-design-vue'
 import { usePracticeStore } from './stores/practice'
@@ -36,6 +37,11 @@ const menuItems: MenuProps['items'] = [
       { key: '/wrong', icon: () => h(BugOutlined), label: '错题练习' },
       { key: '/exam', icon: () => h(FormOutlined), label: '模拟考试' },
     ],
+  },
+  {
+    key: '/memory',
+    icon: () => h(ClockCircleOutlined),
+    label: '练习记忆',
   },
   {
     key: '/guide',

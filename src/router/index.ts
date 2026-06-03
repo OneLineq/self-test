@@ -54,6 +54,11 @@ const router = createRouter({
       component: () => import('../views/BankManage.vue'),
     },
     {
+      path: '/memory',
+      name: 'PracticeMemory',
+      component: () => import('../views/Memory.vue'),
+    },
+    {
       path: '/guide',
       name: 'UserGuide',
       component: () => import('../views/UserGuide.vue'),

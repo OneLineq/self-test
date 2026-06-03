@@ -46,6 +46,7 @@ export const usePracticeStore = defineStore('practice', () => {
     practiceMode: PracticeMode,
     questionTypes?: string[],
     limit?: number,
+    perTypeLimits?: Record<string, number>,
   ) {
     loading.value = true
     mode.value = practiceMode
@@ -58,6 +59,7 @@ export const usePracticeStore = defineStore('practice', () => {
         mode: practiceMode,
         questionTypes: questionTypes && questionTypes.length > 0 ? questionTypes : null,
         limit: limit ?? null,
+        perTypeLimits: perTypeLimits && Object.keys(perTypeLimits).length > 0 ? perTypeLimits : null,
       })
     } finally {
       loading.value = false

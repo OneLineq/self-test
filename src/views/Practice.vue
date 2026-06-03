@@ -2,7 +2,7 @@
 // ============================================================
 // 刷题助手 — 练习页面（顺序/随机/错题）
 // ============================================================
-import { onMounted, ref, computed, watch, h } from 'vue'
+import { onMounted, onBeforeUnmount, ref, computed, watch, h } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -11,10 +11,15 @@ import {
   CheckOutlined,
   CloseOutlined,
   ExclamationCircleOutlined,
+  HistoryOutlined,
+  DeleteOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
 } from '@ant-design/icons-vue'
 import { usePracticeStore } from '../stores/practice'
-import { PracticeModeLabel } from '../types'
-import type { PracticeMode } from '../types'
+import { invoke } from '@tauri-apps/api/tauri'
+import { PracticeModeLabel, isChoiceType } from '../types'
+import type { PracticeMode, PracticeMemoryItem } from '../types'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,15 +28,188 @@ const store = usePracticeStore()
 const bankId = route.params.bankId as string
 const mode = (route.query.mode as PracticeMode) || 'sequential'
 const selectedAnswer = ref('')
+/** 不定项模式：选择题不区分单选/多选，可自由选择一项或多项后提交 */
+const indeterminateMode = ref(false)
 const jumpInput = ref<number>(1)
+
+// ===== 刷题记忆 =====
+const questionMemory = ref<Map<string, PracticeMemoryItem[]>>(new Map())
+const memoryExpanded = ref(false)
+const loadingMemory = ref(false)
+const clearingMemory = ref(false)
+
+/** 获取当前题目的历史记录 */
+async function fetchQuestionMemory() {
+  const q = question.value
+  if (!q) return
+  if (questionMemory.value.has(q.id)) {
+    // 已缓存，直接展开
+    memoryExpanded.value = !memoryExpanded.value
+    return
+  }
+  loadingMemory.value = true
+  try {
+    const records = await invoke<PracticeMemoryItem[]>('get_question_memory', { questionId: q.id })
+    questionMemory.value.set(q.id, records)
+    memoryExpanded.value = true
+  } catch (e) {
+    message.error('加载记忆失败')
+  } finally {
+    loadingMemory.value = false
+  }
+}
+
+/** 清除当前题目的记忆 */
+async function clearQuestionMemory() {
+  const q = question.value
+  if (!q) return
+  Modal.confirm({
+    title: '清除本题记忆',
+    icon: h(ExclamationCircleOutlined),
+    content: '确定要清除本题的所有刷题记录吗？此操作不可恢复。',
+    okText: '清除',
+    okType: 'danger',
+    async onOk() {
+      clearingMemory.value = true
+      try {
+        await invoke('clear_question_memory', { questionId: q.id })
+        questionMemory.value.delete(q.id)
+        memoryExpanded.value = false
+        // 更新题目上的统计字段
+        q.times_attempted = 0
+        q.times_correct = 0
+        q.last_attempted = null
+        message.success('已清除本题记忆')
+      } catch (e) {
+        message.error('清除失败: ' + e)
+      } finally {
+        clearingMemory.value = false
+      }
+    },
+  })
+}
+
+/** 解析正确答案用于显示 */
+function formatCorrectAnswer(item: PracticeMemoryItem): string {
+  if (!item.correct_answer) return ''
+  if (item.correct_answer === '""') return '(空)'
+  try {
+    const parsed = JSON.parse(item.correct_answer)
+    if (Array.isArray(parsed)) return parsed.join(', ')
+    return parsed || '(空)'
+  } catch {
+    return item.correct_answer
+  }
+}
+
+/** 解析用户答案 */
+function formatUserAnswer(item: PracticeMemoryItem): string {
+  if (!item.user_answer) return '(未作答)'
+  return item.user_answer
+}
+// ===== 断点续练（仅顺序练习，后端 SQLite 持久化） =====
+/** 初始化阶段标志：在读取/处理断点之前，防止 watch 误存 currentIndex=0 */
+const progressLoaded = ref(false)
+
+async function saveProgress() {
+  if (mode !== 'sequential') return
+  try {
+    await invoke('save_practice_progress', {
+      bankId,
+      currentIndex: store.currentIndex,
+      selectedAnswer: selectedAnswer.value,
+    })
+  } catch (e) {
+    // 静默失败，不影响练习
+  }
+}
+
+interface PracticeProgress {
+  current_index: number
+  selected_answer: string
+  updated_at: string
+}
+
+async function loadProgress(): Promise<number | null> {
+  if (mode !== 'sequential') return null
+  try {
+    const progress = await invoke<PracticeProgress | null>('load_practice_progress', { bankId })
+    if (!progress) return null
+    const idx = progress.current_index
+    if (idx < 0) return null
+    return idx
+  } catch {
+    return null
+  }
+}
+
+/** 读取已保存的选中答案（仅用户选"继续"时恢复） */
+async function loadSavedAnswer(): Promise<string> {
+  try {
+    const progress = await invoke<PracticeProgress | null>('load_practice_progress', { bankId })
+    if (progress && progress.selected_answer) {
+      return progress.selected_answer
+    }
+  } catch {
+    // 静默
+  }
+  return ''
+}
 
 onMounted(async () => {
   try {
     await store.loadQuestions(bankId, mode)
+    // 顺序练习：检测断点，弹窗让用户选择接续还是从头
+    if (mode === 'sequential') {
+      const savedIdx = await loadProgress()
+      if (savedIdx !== null && savedIdx < store.totalCount && savedIdx > 0) {
+        // 有断点，弹窗询问
+        await new Promise<void>((resolve) => {
+          Modal.confirm({
+            title: '发现上次练习进度',
+            icon: h(ExclamationCircleOutlined),
+            content: `上次练习到第 ${savedIdx + 1} 题（共 ${store.totalCount} 题）`,
+            okText: '继续练习',
+            cancelText: '从头开始',
+            onOk: async () => {
+              store.goTo(savedIdx)
+              const savedAnswer = await loadSavedAnswer()
+              if (savedAnswer) {
+                selectedAnswer.value = savedAnswer
+              } else {
+                const q = store.currentQuestion
+                if (q) {
+                  selectedAnswer.value = store.userAnswers.get(q.id) || ''
+                }
+              }
+              resolve()
+            },
+            onCancel: async () => {
+              // 从头开始：清除保存的进度
+              try {
+                await invoke('clear_practice_progress', { bankId })
+              } catch {
+                // 静默
+              }
+              store.goTo(0)
+              selectedAnswer.value = ''
+              resolve()
+            },
+          })
+        })
+      }
+    }
   } catch (e) {
     message.error('加载题目失败')
     router.back()
+  } finally {
+    // 无论是否有断点、用户选什么，初始化完成，允许后续 watch 保存进度
+    progressLoaded.value = true
   }
+})
+
+onBeforeUnmount(async () => {
+  await saveProgress()
 })
 
 // 离页确认：防止侧边栏误触退出
@@ -46,14 +224,16 @@ onBeforeRouteLeave((_to, _from, next) => {
     Modal.confirm({
       title: '退出练习？',
       icon: h(ExclamationCircleOutlined),
-      content: `已作答 ${store.answeredCount} / ${store.totalCount} 题，退出不会丢失已保存的记录。`,
+      content: `已作答 ${store.answeredCount} / ${store.totalCount} 题，退出不会丢失已保存的记录。下次可继续接续练习。`,
       okText: '退出',
       cancelText: '继续答题',
-      onOk: () => next(),
+      onOk: () => {
+        saveProgress().then(() => next())
+      },
       onCancel: () => next(false),
     })
   } else {
-    next()
+    saveProgress().then(() => next())
   }
 })
 
@@ -65,10 +245,11 @@ function selectOption(optIndex: number) {
   if (store.showResult.get(qid)) return // already answered
 
   const letter = String.fromCharCode(65 + optIndex)
-  const isMulti = question.value ? Array.isArray(question.value.answer) : false
+  const isChoice = question.value ? isChoiceType(question.value.type) : false
+  const isMulti = (indeterminateMode.value && isChoice) || Array.isArray(question.value?.answer)
 
   if (isMulti) {
-    // 多选题：切换选中
+    // 不定项 / 多选题：切换选中
     let current = selectedAnswer.value || ''
     const parts = current ? current.split(',').filter(Boolean) : []
     if (parts.includes(letter)) {
@@ -122,11 +303,15 @@ function handlePrev() {
   store.prev()
 }
 
-// Watch for question changes to reset selection
+// Watch for question changes to reset selection and memory，保存断点
 watch(() => store.currentIndex, () => {
   const q = store.currentQuestion
   if (q) {
     selectedAnswer.value = store.userAnswers.get(q.id) || ''
+  }
+  memoryExpanded.value = false
+  if (progressLoaded.value) {
+    saveProgress()
   }
 })
 
@@ -142,10 +327,14 @@ function exitPractice() {
   Modal.confirm({
     title: '退出练习',
     icon: h(ExclamationCircleOutlined),
-    content: '确定要退出当前练习吗？已作答的题目记录不会丢失。',
+    content: '确定要退出当前练习吗？已作答的题目记录不会丢失，下次可继续接续练习。',
     okText: '退出',
     cancelText: '继续练习',
-    onOk: () => router.push('/'),
+    onOk: async () => {
+      await saveProgress()
+      store.skipLeaveConfirm = true
+      router.push('/')
+    },
   })
 }
 
@@ -176,6 +365,10 @@ function navDotStyle(idx: number): Record<string, string> {
         <span style="color: #52c41a">✓ {{ store.correctCount }}</span>
       </a-space>
       <a-progress :percent="progress" :show-info="false" style="flex: 1; margin: 0 16px" />
+      <a-space style="margin-right: 12px">
+        <a-switch v-model:checked="indeterminateMode" size="small" />
+        <span style="font-size: 12px; color: #999">不定项</span>
+      </a-space>
       <a-button @click="exitPractice">退出</a-button>
     </div>
 
@@ -193,9 +386,12 @@ function navDotStyle(idx: number): Record<string, string> {
     </div>
 
     <div v-else class="question-area">
-      <!-- 题型标签 -->
-      <a-tag v-if="question.type" style="margin-bottom: 12px">
-        {{ question.type }}
+      <!-- 题型标签（不定项模式隐藏单选/多选标签） -->
+      <a-tag v-if="indeterminateMode && isChoiceType(question.type)" color="orange" style="margin-bottom: 12px">
+        不定项选择
+      </a-tag>
+      <a-tag v-else-if="question.type" style="margin-bottom: 12px">
+        {{ question.type === 'single' ? '单选题' : question.type === 'multiple' ? '多选题' : question.type === 'judge' ? '判断题' : question.type === 'fill' ? '填空题' : question.type }}
       </a-tag>
 
       <!-- 题干 -->
@@ -204,11 +400,73 @@ function navDotStyle(idx: number): Record<string, string> {
         {{ question.stem }}
       </div>
 
-      <!-- 历史统计 -->
-      <div v-if="question.times_attempted > 0" class="question-stats">
-        历史统计：出现 {{ question.times_attempted }} 次，
-        正确 {{ question.times_correct }} 次，
-        正确率 {{ question.times_attempted > 0 ? Math.round(question.times_correct / question.times_attempted * 100) : 0 }}%
+      <!-- 刷题记忆 -->
+      <div class="memory-panel">
+        <div class="memory-header" @click="fetchQuestionMemory">
+          <a-space>
+            <HistoryOutlined :style="{ color: question.times_attempted > 0 ? '#1890ff' : '#ccc' }" />
+            <span :style="{ color: question.times_attempted > 0 ? '#333' : '#999', fontWeight: 500 }">
+              刷题记忆
+            </span>
+            <template v-if="question.times_attempted > 0">
+              <span style="color: #999; font-size: 12px">
+                练过 {{ question.times_attempted }} 次 ·
+                正确 {{ question.times_correct }} 次 ·
+                正确率 {{ Math.round(question.times_correct / question.times_attempted * 100) }}%
+              </span>
+              <a-tag :color="question.times_correct === question.times_attempted ? 'green' : 'orange'" style="font-size: 11px">
+                {{ question.times_correct === question.times_attempted ? '已掌握' : '需复习' }}
+              </a-tag>
+            </template>
+            <span v-else style="color: #ccc; font-size: 12px">尚未练过此题</span>
+          </a-space>
+          <a-space>
+            <a-button
+              v-if="question.times_attempted > 0 && !store.showResult.get(question.id)"
+              size="small"
+              danger
+              type="text"
+              :loading="clearingMemory"
+              @click.stop="clearQuestionMemory"
+            >
+              <DeleteOutlined /> 清除
+            </a-button>
+            <span style="color: #999; font-size: 12px">
+              <template v-if="loadingMemory"><a-spin size="small" /></template>
+              <template v-else>{{ memoryExpanded ? '收起' : '展开' }}</template>
+            </span>
+          </a-space>
+        </div>
+
+        <!-- 展开的记忆详情 -->
+        <div v-if="memoryExpanded" class="memory-body">
+          <div v-if="!questionMemory.get(question.id) || questionMemory.get(question.id)!.length === 0" style="text-align: center; padding: 12px; color: #999; font-size: 13px">
+            暂无历史记录
+          </div>
+          <div v-else class="memory-records">
+            <div
+              v-for="(record, idx) in questionMemory.get(question.id)"
+              :key="record.id"
+              class="memory-record-item"
+            >
+              <div class="memory-record-line">
+                <span style="color: #999; font-size: 11px; min-width: 20px">{{ idx + 1 }}.</span>
+                <span :style="{ color: record.is_correct ? '#52c41a' : '#f5222d', fontWeight: 500, fontSize: 13 }">
+                  <span v-if="record.is_correct"><CheckCircleOutlined /> 正确</span>
+                  <span v-else><CloseCircleOutlined /> 错误</span>
+                </span>
+                <span v-if="!record.is_correct" style="font-size: 12px">
+                  <span style="color: #999">你的答案：</span>
+                  <span style="color: #f5222d">{{ formatUserAnswer(record) }}</span>
+                  <span style="color: #999"> 正确答案：</span>
+                  <span style="color: #52c41a">{{ formatCorrectAnswer(record) }}</span>
+                </span>
+                <span style="flex: 1" />
+                <span style="color: #bbb; font-size: 11px">{{ record.timestamp?.slice(0, 16).replace('T', ' ') }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 选项 -->
@@ -227,12 +485,12 @@ function navDotStyle(idx: number): Record<string, string> {
         </div>
       </div>
 
-      <!-- 多选提交按钮 -->
+      <!-- 提交按钮（多选题 或 不定项模式下已选时的选择题） -->
       <div
         v-if="
           !store.showResult.get(question.id) &&
-          Array.isArray(question.answer) &&
-          selectedAnswer
+          selectedAnswer &&
+          (Array.isArray(question.answer) || (indeterminateMode && isChoiceType(question.type)))
         "
         style="text-align: center; margin-top: 16px"
       >
@@ -473,5 +731,60 @@ function navDotStyle(idx: number): Record<string, string> {
   font-size: 14px;
   padding: 0 2px;
   user-select: none;
+}
+
+/* ===== 刷题记忆面板 ===== */
+.memory-panel {
+  margin-bottom: 16px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.memory-panel:hover {
+  border-color: #d9d9d9;
+}
+
+.memory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  background: #fafafa;
+  transition: background 0.2s;
+}
+
+.memory-header:hover {
+  background: #f0f5ff;
+}
+
+.memory-body {
+  border-top: 1px solid #f0f0f0;
+  padding: 8px 12px;
+  background: #fff;
+}
+
+.memory-records {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.memory-record-item {
+  padding: 4px 0;
+}
+
+.memory-record-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.memory-record-line:hover {
+  background: #fafafa;
 }
 </style>

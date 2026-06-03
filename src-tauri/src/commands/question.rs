@@ -597,13 +597,13 @@ pub fn clear_bank_questions(
     bank_id: String,
 ) -> Result<u32, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let count = conn
-        .execute("DELETE FROM questions WHERE bank_id=?1", rusqlite::params![bank_id])
-        .map_err(|e| format!("清空题库失败: {}", e))? as u32;
-    // 同时清理该题库的练习记录
+    // 先清理练习记录（否则外键约束会阻止删除题目）
     let _ = conn.execute(
         "DELETE FROM practice_records WHERE bank_id=?1",
         rusqlite::params![bank_id],
     );
+    let count = conn
+        .execute("DELETE FROM questions WHERE bank_id=?1", rusqlite::params![bank_id])
+        .map_err(|e| format!("清空题库失败: {}", e))? as u32;
     Ok(count)
 }

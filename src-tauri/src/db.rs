@@ -49,6 +49,14 @@ pub fn init_db(app_dir: &Path) -> Connection {
             FOREIGN KEY (bank_id) REFERENCES banks(id)
         );
 
+        CREATE TABLE IF NOT EXISTS practice_progress (
+            bank_id         TEXT PRIMARY KEY,
+            current_index   INTEGER NOT NULL DEFAULT 0,
+            selected_answer TEXT NOT NULL DEFAULT '',
+            updated_at      TEXT NOT NULL,
+            FOREIGN KEY (bank_id) REFERENCES banks(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_questions_bank ON questions(bank_id);
         CREATE INDEX IF NOT EXISTS idx_practice_question ON practice_records(question_id);
         CREATE INDEX IF NOT EXISTS idx_practice_bank ON practice_records(bank_id);

@@ -42,12 +42,31 @@ export interface PracticeRecord {
 /** 练习模式 */
 export type PracticeMode = 'sequential' | 'random' | 'wrong' | 'exam'
 
+/** 判断是否为选择题（单选/多选），即可使用不定项模式 */
+export function isChoiceType(type: QuestionType): boolean {
+  return type === 'single' || type === 'multiple'
+}
+
 /** 练习模式标签 */
 export const PracticeModeLabel: Record<PracticeMode, string> = {
   sequential: '顺序练习',
   random: '随机练习',
   wrong: '错题练习',
   exam: '模拟考试',
+}
+
+/** 练习记忆条目（含题目详情） */
+export interface PracticeMemoryItem {
+  id: number
+  question_id: string
+  bank_id: string
+  stem: string
+  type: QuestionType
+  correct_answer: string
+  user_answer: string
+  is_correct: boolean
+  mode: PracticeMode
+  timestamp: string
 }
 
 /** Excel 列映射配置 */

@@ -16,6 +16,7 @@ import {
   RightOutlined,
   RiseOutlined,
   ExclamationCircleOutlined,
+  RocketOutlined,
 } from '@ant-design/icons-vue'
 import { useBankStore } from '../stores/bank'
 import { PracticeModeLabel } from '../types'
@@ -89,7 +90,7 @@ function goBankManage(bankId: string) {
   <div class="dashboard">
     <!-- 欢迎区 -->
     <a-alert
-      message="📝 欢迎使用刷题助手"
+      message="欢迎使用刷题助手"
       description="选择练习模式开始刷题，或从下方题库快速进入。支持顺序练习、随机练习、错题练习和模拟考试。"
       type="info"
       show-icon
@@ -180,7 +181,9 @@ function goBankManage(bankId: string) {
     </a-spin>
 
     <!-- 练习模式快捷入口 -->
-    <h3 style="margin-bottom: 12px">🚀 快速开始练习</h3>
+    <h3 style="margin-bottom: 12px">
+      <RocketOutlined style="margin-right: 6px" />快速开始练习
+    </h3>
     <a-row :gutter="[16, 16]" style="margin-bottom: 24px">
       <a-col
         v-for="m in modeCards"
