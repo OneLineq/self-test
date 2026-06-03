@@ -8,7 +8,7 @@
   },
   "package": {
     "productName": "SelfTest",
-    "version": "0.9.0"
+    "version": "0.9.1"
   },
   "tauri": {
     "allowlist": {
@@ -26,7 +26,7 @@
         "icons/icon.ico"
       ],
       "deb": {
-        "depends": ["libwebkit2gtk-4.0-37", "libgtk-3-0", "libappindicator3-1", "zenity"]
+        "depends": ["libwebkit2gtk-4.0-37", "libgtk-3-0", "libappindicator3-1"]
       }
     },
     "security": {
