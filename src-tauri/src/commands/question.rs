@@ -3,7 +3,8 @@
 // ============================================================
 use crate::db::DbState;
 use crate::models::{DuplicateCheckResult, ImportResult, Question};
-use calamine::{open_workbook, Reader, Xls, Xlsx};
+use calamine::{Reader, Xls, Xlsx};
+use std::io::Cursor;
 
 /// 标准化文件路径并校验文件是否存在
 /// 处理常见问题：file:// 前缀、多余空白、编码问题等
@@ -41,21 +42,54 @@ fn resolve_file_path(raw: &str) -> Result<String, String> {
     Ok(path_str)
 }
 
-/// 根据扩展名自动选择 Xls（.et / .xls）或 Xlsx 读取器
+/// 读取文件到内存，校验魔数，然后通过 Cursor 传给 calamine 解析
+/// 绕过麒麟 V10 上 calamine 通过 FFI 路径打开文件可能出现的异常
 macro_rules! open_spreadsheet {
     ($path:expr, $wb:ident, $body:block) => {{
         let _resolved = resolve_file_path(&$path)?;
         let p = std::path::Path::new(&_resolved);
         let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+
+        // 先把文件整个读到内存，再通过 Cursor 传给 calamine
+        let file_bytes = std::fs::read(&_resolved)
+            .map_err(|e| format!("读取文件失败 '{}': {}", _resolved, e))?;
+
+        // 校验文件魔数
+        let sig_ok = if ext == "et" || ext == "xls" {
+            // OLE2/CFB 签名: d0 cf 11 e0
+            file_bytes.len() >= 4
+                && file_bytes[0] == 0xd0
+                && file_bytes[1] == 0xcf
+                && file_bytes[2] == 0x11
+                && file_bytes[3] == 0xe0
+        } else {
+            // ZIP 签名: 50 4b 03 04
+            file_bytes.len() >= 4
+                && file_bytes[0] == 0x50
+                && file_bytes[1] == 0x4b
+                && file_bytes[2] == 0x03
+                && file_bytes[3] == 0x04
+        };
+
+        if !sig_ok {
+            let first_hex: String = file_bytes.iter().take(16).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+            return Err(format!(
+                "文件格式无效 '{}': 文件头为 [{}]，不是有效的 {} 格式",
+                _resolved,
+                first_hex,
+                if ext == "et" || ext == "xls" { "OLE2/Excel" } else { "ZIP/xlsx" }
+            ));
+        }
+
+        let cursor = Cursor::new(file_bytes);
+
         if ext == "et" || ext == "xls" {
-            let mut $wb: Xls<_> = open_workbook(p).map_err(|e| {
-                format!("无法打开文件 '{}' (原始路径: '{}'): {}", _resolved, $path, e)
-            })?;
+            let mut $wb: Xls<Cursor<Vec<u8>>> = Xls::new(cursor)
+                .map_err(|e| format!("无法解析文件 '{}': {}", _resolved, e))?;
             $body
         } else {
-            let mut $wb: Xlsx<_> = open_workbook(p).map_err(|e| {
-                format!("无法打开文件 '{}' (原始路径: '{}'): {}", _resolved, $path, e)
-            })?;
+            let mut $wb: Xlsx<Cursor<Vec<u8>>> = Xlsx::new(cursor)
+                .map_err(|e| format!("无法解析文件 '{}': {}", _resolved, e))?;
             $body
         }
     }};
