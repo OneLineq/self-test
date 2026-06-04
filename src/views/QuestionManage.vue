@@ -18,6 +18,7 @@ import {
   ClearOutlined,
 } from '@ant-design/icons-vue'
 import { invoke } from '@tauri-apps/api/tauri'
+import { open, save } from '@tauri-apps/api/dialog'
 import type { Question } from '../types'
 
 const route = useRoute()
@@ -190,8 +191,8 @@ async function pickExcelFile() {
   agentLog('QuestionManage.vue:pickExcelFile', 'click import excel', 'J')
   try {
     agentLog('QuestionManage.vue:pickExcelFile', 'invoking pick_file', 'J')
-    const path = await invoke<string | null>('pick_file', {
-      filters: ['xlsx', 'xls', 'xlsb', 'ods', 'et'],
+    const path = await open({
+      title: '选择表格文件',
     })
     agentLog('QuestionManage.vue:pickExcelFile', 'pick_file returned', 'J', { hasPath: !!path })
     if (path) {
@@ -358,7 +359,10 @@ async function handleClearBank() {
 // ============== 导出 ==============
 async function doExport() {
   try {
-    const path = await invoke<string | null>('save_file', { defaultName: `${bankName.value}.xlsx` })
+    const path = await save({
+      title: '保存为',
+      defaultPath: `${bankName.value}.xlsx`,
+    })
     if (!path) return
     await invoke('export_questions', { bankId, savePath: path })
     message.success(`导出成功：${path}`)

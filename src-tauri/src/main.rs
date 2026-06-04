@@ -55,9 +55,6 @@ fn main() {
             commands::practice::save_practice_progress,
             commands::practice::load_practice_progress,
             commands::practice::clear_practice_progress,
-            // File picker commands
-            commands::file_picker::pick_file,
-            commands::file_picker::save_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
