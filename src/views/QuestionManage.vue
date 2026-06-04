@@ -203,6 +203,10 @@ async function pickExcelFile() {
       const sheets = await invoke<string[]>('get_sheet_names', { filePath: path })
       sheetNames.value = sheets
       sheetName.value = sheets[0] || ''
+      // 单选工作表自动预览
+      if (sheetName.value) {
+        await previewExcel()
+      }
     }
   } catch (e) {
     agentLog('QuestionManage.vue:pickExcelFile', 'pick_file failed', 'J', { error: String(e) })
