@@ -526,6 +526,43 @@ pub async fn preview_excel(
     result
 }
 
+/// 调试命令：查看 Tauri 收到的文件路径实际内容
+/// 返回文件是否存在、大小、前 16 字节 hex
+#[tauri::command]
+pub fn debug_file_info(file_path: String) -> Result<serde_json::Value, String> {
+    use std::io::Read;
+
+    let raw_path = file_path.clone();
+    let p = std::path::Path::new(&raw_path);
+
+    let exists = p.exists();
+    let is_file = p.is_file();
+    let size = if is_file {
+        std::fs::metadata(p).map(|m| m.len() as i64).unwrap_or(-1)
+    } else {
+        -1
+    };
+
+    let mut hex_header = String::new();
+    if is_file && size > 0 {
+        if let Ok(mut f) = std::fs::File::open(p) {
+            let mut buf = [0u8; 32];
+            let n = f.read(&mut buf).unwrap_or(0);
+            if n > 0 {
+                hex_header = buf[..n].iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+            }
+        }
+    }
+
+    Ok(serde_json::json!({
+        "raw_path": raw_path,
+        "exists": exists,
+        "is_file": is_file,
+        "size_bytes": size,
+        "hex_header": hex_header,
+    }))
+}
+
 /// 检测 Excel 文件中与题库已有题目重复的题干
 #[tauri::command]
 pub fn check_duplicate_stems(

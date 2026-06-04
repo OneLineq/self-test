@@ -197,6 +197,14 @@ async function pickExcelFile() {
     agentLog('QuestionManage.vue:pickExcelFile', 'pick_file returned', 'J', { hasPath: !!path })
     if (path) {
       excelPath.value = path
+      // 调试：查看文件信息
+      try {
+        const info = await invoke('debug_file_info', { filePath: path })
+        agentLog('QuestionManage.vue:pickExcelFile', 'debug_file_info', 'J', info as Record<string, unknown>)
+        message.info(`文件信息: 路径=${(info as any).raw_path}, 存在=${(info as any).exists}, 大小=${(info as any).size_bytes}字节, 文件头=${(info as any).hex_header}`)
+      } catch (e) {
+        agentLog('QuestionManage.vue:pickExcelFile', 'debug_file_info failed', 'J', { error: String(e) })
+      }
       importVisible.value = true
       step.value = 1
       // 获取工作表列表
