@@ -36,13 +36,9 @@ fn resolve_file_path(raw: &str) -> Result<String, String> {
         return Err(format!("文件为空: '{}' (原始路径: '{}')", path_str, raw));
     }
 
-    // 尝试获取绝对路径（返回 PathBuf，转成 String）
-    let abs_path = p
-        .canonicalize()
-        .map(|pb| pb.to_string_lossy().to_string())
-        .unwrap_or(path_str);
-
-    Ok(abs_path)
+    // 路径来自 Tauri 原生对话框，已经是正确路径，无需 canonicalize
+    //（麒麟 V10 上 canonicalize + to_string_lossy 对中文路径会返回损坏数据）
+    Ok(path_str)
 }
 
 /// 根据扩展名自动选择 Xls（.et / .xls）或 Xlsx 读取器
@@ -524,43 +520,6 @@ pub async fn preview_excel(
         .map_err(|e| format!("预览任务失败: {}", e))?;
 
     result
-}
-
-/// 调试命令：查看 Tauri 收到的文件路径实际内容
-/// 返回文件是否存在、大小、前 16 字节 hex
-#[tauri::command]
-pub fn debug_file_info(file_path: String) -> Result<serde_json::Value, String> {
-    use std::io::Read;
-
-    let raw_path = file_path.clone();
-    let p = std::path::Path::new(&raw_path);
-
-    let exists = p.exists();
-    let is_file = p.is_file();
-    let size = if is_file {
-        std::fs::metadata(p).map(|m| m.len() as i64).unwrap_or(-1)
-    } else {
-        -1
-    };
-
-    let mut hex_header = String::new();
-    if is_file && size > 0 {
-        if let Ok(mut f) = std::fs::File::open(p) {
-            let mut buf = [0u8; 32];
-            let n = f.read(&mut buf).unwrap_or(0);
-            if n > 0 {
-                hex_header = buf[..n].iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
-            }
-        }
-    }
-
-    Ok(serde_json::json!({
-        "raw_path": raw_path,
-        "exists": exists,
-        "is_file": is_file,
-        "size_bytes": size,
-        "hex_header": hex_header,
-    }))
 }
 
 /// 检测 Excel 文件中与题库已有题目重复的题干

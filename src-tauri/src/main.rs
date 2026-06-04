@@ -42,8 +42,6 @@ fn main() {
             commands::question::check_duplicate_stems,
             commands::question::batch_delete_questions,
             commands::question::clear_bank_questions,
-            // File path debug
-            commands::question::debug_file_info,
             // Practice commands
             commands::practice::get_practice_questions,
             commands::practice::record_practice,
