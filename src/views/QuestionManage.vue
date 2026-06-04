@@ -193,7 +193,7 @@ async function pickExcelFile() {
     agentLog('QuestionManage.vue:pickExcelFile', 'invoking pick_file', 'J')
     const path = await open({
       title: '选择表格文件',
-    })
+    }) as string | null
     agentLog('QuestionManage.vue:pickExcelFile', 'pick_file returned', 'J', { hasPath: !!path })
     if (path) {
       excelPath.value = path
