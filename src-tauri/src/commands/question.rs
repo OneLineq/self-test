@@ -5,16 +5,61 @@ use crate::db::DbState;
 use crate::models::{DuplicateCheckResult, ImportResult, Question};
 use calamine::{open_workbook, Reader, Xls, Xlsx};
 
+/// 标准化文件路径并校验文件是否存在
+/// 处理常见问题：file:// 前缀、多余空白、编码问题等
+fn resolve_file_path(raw: &str) -> Result<String, String> {
+    // 去除首尾空白
+    let trimmed = raw.trim();
+
+    // 去除 file:// 或 file:/// 前缀（某些 GTK 后端的特殊行为）
+    let cleaned = trimmed
+        .strip_prefix("file:///")
+        .or_else(|| trimmed.strip_prefix("file://"))
+        .or_else(|| trimmed.strip_prefix("file:/"))
+        .unwrap_or(trimmed);
+
+    // 统一路径分隔符（保险），并确保不以空白结尾
+    let path_str = cleaned.trim().to_string();
+
+    let p = std::path::Path::new(&path_str);
+
+    // 检查文件是否存在并获取元数据
+    let metadata = std::fs::metadata(p)
+        .map_err(|e| format!("无法访问文件 '{}' (原始路径: '{}'): {}", path_str, raw, e))?;
+
+    if !metadata.is_file() {
+        return Err(format!("路径不是文件: '{}' (原始路径: '{}')", path_str, raw));
+    }
+
+    let file_size = metadata.len();
+    if file_size == 0 {
+        return Err(format!("文件为空: '{}' (原始路径: '{}')", path_str, raw));
+    }
+
+    // 尝试获取绝对路径（返回 PathBuf，转成 String）
+    let abs_path = p
+        .canonicalize()
+        .map(|pb| pb.to_string_lossy().to_string())
+        .unwrap_or(path_str);
+
+    Ok(abs_path)
+}
+
 /// 根据扩展名自动选择 Xls（.et / .xls）或 Xlsx 读取器
 macro_rules! open_spreadsheet {
     ($path:expr, $wb:ident, $body:block) => {{
-        let p = std::path::Path::new($path);
+        let _resolved = resolve_file_path(&$path)?;
+        let p = std::path::Path::new(&_resolved);
         let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
         if ext == "et" || ext == "xls" {
-            let mut $wb: Xls<_> = open_workbook(p).map_err(|e| format!("无法打开文件: {}", e))?;
+            let mut $wb: Xls<_> = open_workbook(p).map_err(|e| {
+                format!("无法打开文件 '{}' (原始路径: '{}'): {}", _resolved, $path, e)
+            })?;
             $body
         } else {
-            let mut $wb: Xlsx<_> = open_workbook(p).map_err(|e| format!("无法打开文件: {}", e))?;
+            let mut $wb: Xlsx<_> = open_workbook(p).map_err(|e| {
+                format!("无法打开文件 '{}' (原始路径: '{}'): {}", _resolved, $path, e)
+            })?;
             $body
         }
     }};
