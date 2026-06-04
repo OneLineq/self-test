@@ -117,7 +117,7 @@ printf '%s\n' \
   "Version: ${VERSION}" \
   "Architecture: ${ARCH}" \
   'Maintainer: oneline <oneline@example.com>' \
-  'Depends: libwebkit2gtk-4.0-37, libgtk-3-0, libappindicator3-1' \
+  'Depends: libwebkit2gtk-4.0-37, libgtk-3-0, libappindicator3-1, zenity' \
   'Section: education' \
   'Priority: optional' \
   'Description: SelfTest - Quiz practice app' \
