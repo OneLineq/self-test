@@ -73,12 +73,31 @@ macro_rules! open_spreadsheet {
 
         if !sig_ok {
             let first_hex: String = file_bytes.iter().take(16).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
-            return Err(format!(
-                "文件格式无效 '{}': 文件头为 [{}]，不是有效的 {} 格式",
-                _resolved,
-                first_hex,
-                if ext == "et" || ext == "xls" { "OLE2/Excel" } else { "ZIP/xlsx" }
-            ));
+
+            // 检测常见非标准格式
+            let wps_format = file_bytes.len() >= 4
+                && file_bytes[0] == 0xf5
+                && file_bytes[1] == 0x14
+                && file_bytes[2] == 0x00
+                && file_bytes[3] == 0x00;
+
+            let msg = if wps_format {
+                format!(
+                    "文件是 WPS 私有格式，不支持直接读取。请在 WPS 中打开文件后，另存为 .xlsx 格式再导入。\n\
+                     (文件头: [{}])",
+                    first_hex
+                )
+            } else {
+                format!(
+                    "文件格式无效 '{}': 文件头为 [{}]，不是有效的 {} 格式。\n\
+                     请确保文件是标准 Excel 格式（.xlsx 或 .xls），或在 WPS 中另存为 .xlsx。",
+                    _resolved,
+                    first_hex,
+                    if ext == "et" || ext == "xls" { "OLE2/Excel (.xls)" } else { "ZIP/OpenXML (.xlsx)" }
+                )
+            };
+
+            return Err(msg);
         }
 
         let cursor = Cursor::new(file_bytes);
