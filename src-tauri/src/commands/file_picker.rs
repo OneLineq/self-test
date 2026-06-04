@@ -8,10 +8,9 @@
 
 /// 打开文件选择对话框
 #[tauri::command]
-pub fn pick_file(_filters: Option<Vec<String>>) -> Result<Option<String>, String> {
-    use tauri::api::dialog::blocking::FileDialogBuilder;
-
-    let result = FileDialogBuilder::new()
+pub fn pick_file(window: tauri::Window, _filters: Option<Vec<String>>) -> Result<Option<String>, String> {
+    let result = tauri::api::dialog::blocking::FileDialogBuilder::new()
+        .set_parent(&window)
         .set_title("选择表格文件")
         .pick_file();
 
@@ -23,10 +22,9 @@ pub fn pick_file(_filters: Option<Vec<String>>) -> Result<Option<String>, String
 
 /// 打开保存文件对话框
 #[tauri::command]
-pub fn save_file(default_name: String) -> Result<Option<String>, String> {
-    use tauri::api::dialog::blocking::FileDialogBuilder;
-
-    let result = FileDialogBuilder::new()
+pub fn save_file(window: tauri::Window, default_name: String) -> Result<Option<String>, String> {
+    let result = tauri::api::dialog::blocking::FileDialogBuilder::new()
+        .set_parent(&window)
         .set_title("保存为")
         .set_file_name(&default_name)
         .save_file();
