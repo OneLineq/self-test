@@ -54,55 +54,45 @@ macro_rules! open_spreadsheet {
         let file_bytes = std::fs::read(&_resolved)
             .map_err(|e| format!("读取文件失败 '{}': {}", _resolved, e))?;
 
-        // 校验文件魔数
-        let sig_ok = if ext == "et" || ext == "xls" {
-            // OLE2/CFB 签名: d0 cf 11 e0
-            file_bytes.len() >= 4
-                && file_bytes[0] == 0xd0
-                && file_bytes[1] == 0xcf
-                && file_bytes[2] == 0x11
-                && file_bytes[3] == 0xe0
+        // 先检测文件魔数（不依赖扩展名）
+        let first_4: [u8; 4] = if file_bytes.len() >= 4 {
+            [file_bytes[0], file_bytes[1], file_bytes[2], file_bytes[3]]
         } else {
-            // ZIP 签名: 50 4b 03 04
-            file_bytes.len() >= 4
-                && file_bytes[0] == 0x50
-                && file_bytes[1] == 0x4b
-                && file_bytes[2] == 0x03
-                && file_bytes[3] == 0x04
+            return Err(format!("文件为空或损坏 '{}'", _resolved));
         };
 
-        if !sig_ok {
+        // 如果魔数不匹配标准签名，检查是否为 WPS 私有格式
+        let is_ole2 = first_4 == [0xd0, 0xcf, 0x11, 0xe0];
+        let is_zip  = first_4 == [0x50, 0x4b, 0x03, 0x04];
+        let is_wps  = first_4 == [0xf5, 0x14, 0x00, 0x00];
+
+        if !is_ole2 && !is_zip {
             let first_hex: String = file_bytes.iter().take(16).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
 
-            // 检测常见非标准格式
-            let wps_format = file_bytes.len() >= 4
-                && file_bytes[0] == 0xf5
-                && file_bytes[1] == 0x14
-                && file_bytes[2] == 0x00
-                && file_bytes[3] == 0x00;
-
-            let msg = if wps_format {
+            let msg = if is_wps {
                 format!(
-                    "文件是 WPS 私有格式，不支持直接读取。请在 WPS 中打开文件后，另存为 .xlsx 格式再导入。\n\
-                     (文件头: [{}])",
+                    "文件是 WPS 表格私有格式，不能直接导入。\n\
+                     请在 WPS 中点击「另存为」，在「保存类型」中选择【Microsoft Excel 工作簿(.xlsx)】\n\
+                     （不要使用默认的「WPS 表格」格式），保存后再导入。\n\
+                     文件头: [{}]",
                     first_hex
                 )
             } else {
                 format!(
-                    "文件格式无效 '{}': 文件头为 [{}]，不是有效的 {} 格式。\n\
-                     请确保文件是标准 Excel 格式（.xlsx 或 .xls），或在 WPS 中另存为 .xlsx。",
-                    _resolved,
-                    first_hex,
-                    if ext == "et" || ext == "xls" { "OLE2/Excel (.xls)" } else { "ZIP/OpenXML (.xlsx)" }
+                    "文件格式无法识别 '{}'：文件头为 [{}]，不是标准 Excel 格式。\n\
+                     请用 WPS 打开后另存为「Microsoft Excel 工作簿(.xlsx)」(非 WPS 表格格式)。",
+                    _resolved, first_hex
                 )
             };
 
             return Err(msg);
         }
 
+        // 根据实际魔数选择解析器，而非扩展名
+        // 这可以处理 WPS 将 .xlsx 名称用在非 ZIP 文件上的情况
         let cursor = Cursor::new(file_bytes);
 
-        if ext == "et" || ext == "xls" {
+        if is_ole2 {
             let mut $wb: Xls<Cursor<Vec<u8>>> = Xls::new(cursor)
                 .map_err(|e| format!("无法解析文件 '{}': {}", _resolved, e))?;
             $body
