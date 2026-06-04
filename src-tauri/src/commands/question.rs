@@ -61,36 +61,42 @@ macro_rules! open_spreadsheet {
             return Err(format!("文件为空或损坏 '{}'", _resolved));
         };
 
-        // 如果魔数不匹配标准签名，检查是否为 WPS 私有格式
-        let is_ole2 = first_4 == [0xd0, 0xcf, 0x11, 0xe0];
-        let is_zip  = first_4 == [0x50, 0x4b, 0x03, 0x04];
-        let is_wps  = first_4 == [0xf5, 0x14, 0x00, 0x00];
+        // 判断实际格式：优先检查文件头，如果非标准则在整个文件中搜索标准签名
+        // （麒麟 V10 水印系统可能在文件前附加额外数据，需要跳过）
+        let (sig_ok, is_ole2, data_start) = if first_4 == [0xd0, 0xcf, 0x11, 0xe0] {
+            (true, true, 0usize)
+        } else if first_4 == [0x50, 0x4b, 0x03, 0x04] {
+            (true, false, 0usize)
+        } else {
+            // 文件头非标准 → 搜索 OLE2 签名
+            let ole2_pos = file_bytes.windows(4).position(|w| w == [0xd0, 0xcf, 0x11, 0xe0]);
+            let zip_pos  = file_bytes.windows(4).position(|w| w == [0x50, 0x4b, 0x03, 0x04]);
 
-        if !is_ole2 && !is_zip {
-            let first_hex: String = file_bytes.iter().take(16).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
-
-            let msg = if is_wps {
-                format!(
-                    "文件是 WPS 表格私有格式，不能直接导入。\n\
-                     请在 WPS 中点击「另存为」，在「保存类型」中选择【Microsoft Excel 工作簿(.xlsx)】\n\
-                     （不要使用默认的「WPS 表格」格式），保存后再导入。\n\
-                     文件头: [{}]",
-                    first_hex
-                )
+            if let Some(pos) = ole2_pos {
+                (true, true, pos)
+            } else if let Some(pos) = zip_pos {
+                (true, false, pos)
             } else {
-                format!(
-                    "文件格式无法识别 '{}'：文件头为 [{}]，不是标准 Excel 格式。\n\
-                     请用 WPS 打开后另存为「Microsoft Excel 工作簿(.xlsx)」(非 WPS 表格格式)。",
-                    _resolved, first_hex
-                )
-            };
+                (false, false, 0)
+            }
+        };
 
-            return Err(msg);
+        if !sig_ok {
+            let first_hex: String = file_bytes.iter().take(32).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+            return Err(format!(
+                "无法识别文件格式 '{}'：文件头为 [{}]，文件中未找到标准 Excel 格式签名。\n\
+                 可能是水印系统修改了文件格式。请尝试在 WPS 中打开文件后，\n\
+                 点击「另存为」→ 保存类型选择「Microsoft Excel 工作簿(.xlsx)」再导入。",
+                _resolved, first_hex
+            ));
         }
 
-        // 根据实际魔数选择解析器，而非扩展名
-        // 这可以处理 WPS 将 .xlsx 名称用在非 ZIP 文件上的情况
-        let cursor = Cursor::new(file_bytes);
+        // 如果文件头被水印系统修改，从找到的标准签名位置开始截取
+        let cursor = if data_start > 0 {
+            Cursor::new(file_bytes[data_start..].to_vec())
+        } else {
+            Cursor::new(file_bytes)
+        };
 
         if is_ole2 {
             let mut $wb: Xls<Cursor<Vec<u8>>> = Xls::new(cursor)
