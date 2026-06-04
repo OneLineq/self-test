@@ -17,7 +17,7 @@ calamine = "0.26"
 rust_xlsxwriter = "0.80"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-rfd = "0.15"
+rfd = { version = "0.15", features = ["gtk3"] }
 
 [features]
 # Used for production builds or when `devPath` points to the filesystem
