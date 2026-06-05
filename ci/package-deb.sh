@@ -57,7 +57,7 @@ printf '%s\n' \
   'Name[zh_CN]=刷题助手' \
   'GenericName=Quiz Practice Tool' \
   'Comment=刷题助手 - Quiz practice app' \
-  "Exec=${PKG_NAME}" \
+  "Exec=env WEBKIT_DISABLE_COMPOSITING_MODE=1 ${PKG_NAME}" \
   "Icon=${PKG_NAME}" \
   'Terminal=false' \
   'Categories=Education;Utility;' \

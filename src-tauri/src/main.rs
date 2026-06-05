@@ -12,6 +12,11 @@ use db::DbState;
 use std::sync::Mutex;
 
 fn main() {
+    // 在麒麟 V10 等 Linux 平台上，WebKitGTK 的 GPU 硬件加速在部分笔记本
+    // 显卡驱动上会导致 BadMatch X11 错误和白屏，禁用合成模式以强制软件渲染。
+    #[cfg(target_os = "linux")]
+    std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+
     tauri::Builder::default()
         .setup(|app| {
             let app_dir = app
