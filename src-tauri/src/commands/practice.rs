@@ -99,8 +99,8 @@ pub fn get_practice_questions(
                     q.explanation, q.times_attempted, q.times_correct, q.last_attempted
              FROM questions q
              INNER JOIN practice_records pr ON q.id = pr.question_id
-             WHERE q.bank_id = ?1{}{}{}",
-            filter_suffix, type_filter, limit_clause
+             WHERE q.bank_id = ?1{}{}{} {}",
+            filter_suffix, type_filter, limit_clause, order_clause
         );
 
         let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;

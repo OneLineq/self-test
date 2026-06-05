@@ -2,7 +2,7 @@
 // ============================================================
 // 刷题助手 — 模拟考试（含考前设置）
 // ============================================================
-import { onMounted, onBeforeUnmount, ref, computed, h } from 'vue'
+import { onMounted, onBeforeUnmount, ref, computed, watch, h } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -33,6 +33,48 @@ const typeTotalCounts = ref<Record<string, number>>({})
 const perTypeLimits = ref<Record<string, number>>({})
 /** 不定项模式：选择题不区分单选/多选，可自由选择一项或多项 */
 const indeterminateMode = ref(false)
+/** 打乱选项顺序模式 */
+const shuffleMode = ref(false)
+/** 各题目的选项排列映射：questionId → displayIdx → originalIdx */
+const optionShuffleMaps = ref<Map<string, number[]>>(new Map())
+
+/** 生成随机排列（Fisher-Yates） */
+function generateShuffle(n: number): number[] {
+  const indices = Array.from({ length: n }, (_, i) => i)
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]]
+  }
+  return indices
+}
+
+/** 重新生成所有题目的选项排列 */
+function regenerateAllShuffles() {
+  if (!shuffleMode.value) {
+    optionShuffleMaps.value = new Map()
+    return
+  }
+  const map = new Map<string, number[]>()
+  for (const q of store.questions) {
+    if (q.options.length > 0) {
+      map.set(q.id, generateShuffle(q.options.length))
+    }
+  }
+  optionShuffleMaps.value = map
+}
+
+/** 打乱模式下，获取题目某显示位置对应的原始选项字母 */
+function getMockOriginalLetter(qId: string, displayIdx: number): string {
+  const map = optionShuffleMaps.value.get(qId)
+  const originalIdx = shuffleMode.value && map ? map[displayIdx] : displayIdx
+  return String.fromCharCode(65 + originalIdx)
+}
+
+// 监听打乱开关，重新生成排列
+watch(shuffleMode, () => {
+  regenerateAllShuffles()
+})
+
 // 考试时间（分钟）
 const examMinutes = ref(30)
 
@@ -159,6 +201,7 @@ async function startExam() {
     undefined,
     ptl,
   )
+  regenerateAllShuffles()
   remainingSeconds.value = examMinutes.value * 60
   startTimer()
 }
@@ -176,7 +219,7 @@ function startTimer() {
 
 function selectOption(questionId: string, optIndex: number) {
   if (examSubmitted.value) return
-  const letter = String.fromCharCode(65 + optIndex)
+  const letter = getMockOriginalLetter(questionId, optIndex)
   const q = store.questions.find(q => q.id === questionId)
   if (!q) return
   const isChoice = isChoiceType(q.type)
@@ -198,7 +241,7 @@ function selectOption(questionId: string, optIndex: number) {
 }
 
 function getOptionClass(questionId: string, optIndex: number): string {
-  const letter = String.fromCharCode(65 + optIndex)
+  const letter = getMockOriginalLetter(questionId, optIndex)
   const selected = store.userAnswers.get(questionId)
   if (!selected) return ''
   // 多选题：检查该字母是否在已选列表中
@@ -369,6 +412,10 @@ function formatTime(seconds: number): string {
           ⏱ {{ formatTime(remainingSeconds) }}
         </span>
         <span>{{ store.answeredCount }} / {{ store.totalCount }} 已答</span>
+        <a-space style="margin-left: 12px">
+          <a-switch v-model:checked="shuffleMode" size="small" />
+          <span style="font-size: 12px; color: #999">打乱顺序</span>
+        </a-space>
         <a-button
           type="primary"
           danger
@@ -402,8 +449,10 @@ function formatTime(seconds: number): string {
 
           <div class="options-list">
             <div
-              v-for="(opt, idx) in q.options"
-              :key="idx"
+              v-for="(opt, idx) in (shuffleMode && optionShuffleMaps.get(q.id))
+                ? optionShuffleMaps.get(q.id)!.map(i => q.options[i])
+                : q.options"
+              :key="shuffleMode && optionShuffleMaps.get(q.id) ? optionShuffleMaps.get(q.id)![idx] : idx"
               class="option-item"
               :class="getOptionClass(q.id, idx)"
               @click="selectOption(q.id, idx)"

@@ -30,6 +30,20 @@ const mode = (route.query.mode as PracticeMode) || 'sequential'
 const selectedAnswer = ref('')
 /** 不定项模式：选择题不区分单选/多选，可自由选择一项或多项后提交 */
 const indeterminateMode = ref(false)
+/** 打乱选项顺序模式 */
+const shuffleMode = ref(false)
+/** 当前题目的选项排列映射：displayIdx → originalIdx */
+const optionShuffleMap = ref<number[]>([])
+
+/** 生成随机排列（Fisher-Yates） */
+function generateShuffle(n: number): number[] {
+  const indices = Array.from({ length: n }, (_, i) => i)
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]]
+  }
+  return indices
+}
 const jumpInput = ref<number>(1)
 
 // ===== 刷题记忆 =====
@@ -239,12 +253,36 @@ onBeforeRouteLeave((_to, _from, next) => {
 
 const question = computed(() => store.currentQuestion)
 
+/** 打乱后的选项列表（供模板渲染使用） */
+const displayOptions = computed(() => {
+  if (!question.value) return []
+  if (shuffleMode.value && optionShuffleMap.value.length > 0) {
+    return optionShuffleMap.value.map(i => question.value!.options[i])
+  }
+  return question.value.options
+})
+
+/** 打乱模式下，获取显示位置对应的原始选项字母 */
+function getOriginalLetter(displayIdx: number): string {
+  const originalIdx = shuffleMode.value ? optionShuffleMap.value[displayIdx] : displayIdx
+  return String.fromCharCode(65 + originalIdx)
+}
+
+// 监听打乱开关切换或题目切换，重新生成排列
+watch([shuffleMode, question], () => {
+  if (shuffleMode.value && question.value && question.value.options.length > 0) {
+    optionShuffleMap.value = generateShuffle(question.value.options.length)
+  } else {
+    optionShuffleMap.value = []
+  }
+}, { immediate: true })
+
 function selectOption(optIndex: number) {
   if (!question.value) return
   const qid = question.value.id
   if (store.showResult.get(qid)) return // already answered
 
-  const letter = String.fromCharCode(65 + optIndex)
+  const letter = getOriginalLetter(optIndex)
   const isChoice = question.value ? isChoiceType(question.value.type) : false
   const isMulti = (indeterminateMode.value && isChoice) || Array.isArray(question.value?.answer)
 
@@ -269,11 +307,14 @@ function selectOption(optIndex: number) {
 function getOptionClass(optIndex: number): string {
   if (!question.value) return ''
   const qid = question.value.id
-  const letter = String.fromCharCode(65 + optIndex)
+
+  // 获取原始索引（打乱模式下需映射）
+  const originalIdx = shuffleMode.value ? optionShuffleMap.value[optIndex] : optIndex
+  const letter = String.fromCharCode(65 + originalIdx)
 
   // 已提交后的结果展示：用 store 中的答案
   if (store.showResult.get(qid)) {
-    const isCorrect = store.isOptionCorrect(question.value, optIndex)
+    const isCorrect = store.isOptionCorrect(question.value, originalIdx)
     const saved = store.userAnswers.get(qid) || ''
     const isSelected = saved === letter || saved.split(',').filter(Boolean).includes(letter)
     if (isCorrect) return 'option-correct'
@@ -368,6 +409,10 @@ function navDotStyle(idx: number): Record<string, string> {
       <a-space style="margin-right: 12px">
         <a-switch v-model:checked="indeterminateMode" size="small" />
         <span style="font-size: 12px; color: #999">不定项</span>
+      </a-space>
+      <a-space style="margin-right: 12px">
+        <a-switch v-model:checked="shuffleMode" size="small" />
+        <span style="font-size: 12px; color: #999">打乱顺序</span>
       </a-space>
       <a-button @click="exitPractice">退出</a-button>
     </div>
@@ -472,16 +517,16 @@ function navDotStyle(idx: number): Record<string, string> {
       <!-- 选项 -->
       <div class="options-list">
         <div
-          v-for="(opt, idx) in question.options"
-          :key="idx"
+          v-for="(opt, displayIdx) in displayOptions"
+          :key="shuffleMode ? optionShuffleMap[displayIdx] : displayIdx"
           class="option-item"
-          :class="getOptionClass(idx)"
-          @click="selectOption(idx)"
+          :class="getOptionClass(displayIdx)"
+          @click="selectOption(displayIdx)"
         >
-          <span class="option-letter">{{ String.fromCharCode(65 + idx) }}</span>
+          <span class="option-letter">{{ String.fromCharCode(65 + displayIdx) }}</span>
           <span class="option-text">{{ opt.replace(/^[A-D][.、]\s*/, '') }}</span>
-          <CheckOutlined v-if="getOptionClass(idx) === 'option-correct'" class="option-icon" />
-          <CloseOutlined v-if="getOptionClass(idx) === 'option-wrong'" class="option-icon" />
+          <CheckOutlined v-if="getOptionClass(displayIdx) === 'option-correct'" class="option-icon" />
+          <CloseOutlined v-if="getOptionClass(displayIdx) === 'option-wrong'" class="option-icon" />
         </div>
       </div>
 
