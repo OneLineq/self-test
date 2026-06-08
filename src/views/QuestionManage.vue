@@ -2,7 +2,7 @@
 // ============================================================
 // 刷题助手 — 试题管理（含 Excel 导入导出）
 // ============================================================
-import { onMounted, ref, reactive, h } from 'vue'
+import { onMounted, ref, reactive, computed, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -60,6 +60,36 @@ const uniformTypeValue = ref('single')
 const duplicateStrategy = ref<string>('overwrite') // 'overwrite' | 'skip' | 'append'
 
 const bankName = ref('')
+
+// ===== 筛选状态 =====
+const filterType = ref<string>('')
+const filterAccuracyMode = ref<string>('')   // ''=不限, 'above'=高于, 'below'=低于
+const filterAccuracyValue = ref<number>(50)
+const filterWrongOnly = ref(false)
+
+/** 筛选后的题目列表 */
+const filteredQuestions = computed(() => {
+  let list = questions.value
+  // 按题型筛选
+  if (filterType.value) {
+    list = list.filter(q => q.type === filterType.value)
+  }
+  // 按正确率筛选
+  if (filterAccuracyMode.value) {
+    list = list.filter(q => {
+      if (q.times_attempted === 0) return false // 未练过的不计入
+      const rate = q.times_correct / q.times_attempted * 100
+      return filterAccuracyMode.value === 'above'
+        ? rate >= filterAccuracyValue.value
+        : rate < filterAccuracyValue.value
+    })
+  }
+  // 按错题集筛选
+  if (filterWrongOnly) {
+    list = list.filter(q => q.is_wrong)
+  }
+  return list
+})
 
 onMounted(async () => {
   await loadBank()
@@ -387,6 +417,7 @@ const columns = [
   { title: '题干', dataIndex: 'stem', key: 'stem', ellipsis: true },
   { title: '答案', key: 'answer', width: 80 },
   { title: '正确率', key: 'rate', width: 100 },
+  { title: '错题集', key: 'wrong', width: 80 },
   { title: '操作', key: 'action', width: 160 },
 ]
 </script>
@@ -408,10 +439,55 @@ const columns = [
       </a-space>
     </div>
 
+    <!-- 筛选栏 -->
+    <div style="margin-bottom: 16px; padding: 12px 16px; background: #fafafa; border-radius: 8px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+      <span style="font-size: 13px; color: #666; font-weight: 500">筛选：</span>
+      <a-select
+        v-model:value="filterType"
+        style="width: 120px"
+        placeholder="全部题型"
+        allow-clear
+        @clear="filterType = ''"
+      >
+        <a-select-option value="">全部题型</a-select-option>
+        <a-select-option value="single">单选题</a-select-option>
+        <a-select-option value="multiple">多选题</a-select-option>
+        <a-select-option value="judge">判断题</a-select-option>
+        <a-select-option value="fill">填空题</a-select-option>
+      </a-select>
+
+      <a-select v-model:value="filterAccuracyMode" style="width: 130px" placeholder="正确率" allow-clear @clear="filterAccuracyMode = ''">
+        <a-select-option value="">正确率不限</a-select-option>
+        <a-select-option value="above">正确率高于</a-select-option>
+        <a-select-option value="below">正确率低于</a-select-option>
+      </a-select>
+      <a-input-number
+        v-if="filterAccuracyMode"
+        v-model:value="filterAccuracyValue"
+        :min="0"
+        :max="100"
+        :formatter="(v: any) => `${v}%`"
+        :parser="(v: any) => v.replace('%', '')"
+        style="width: 90px"
+        size="small"
+      />
+
+      <a-checkbox v-model:checked="filterWrongOnly" style="margin-left: 4px">
+        只显示错题集题目
+      </a-checkbox>
+
+      <span style="color: #999; font-size: 12px; margin-left: auto">
+        共 <strong>{{ filteredQuestions.length }}</strong> 题
+        <template v-if="filteredQuestions.length !== questions.length">
+          （筛选自 {{ questions.length }} 题）
+        </template>
+      </span>
+    </div>
+
     <a-table
       :row-selection="rowSelection"
       :columns="columns"
-      :data-source="questions"
+      :data-source="filteredQuestions"
       :loading="loading"
       row-key="id"
       :pagination="{ defaultPageSize: 20, pageSizeOptions: ['10', '20', '50', '100', '200'], showSizeChanger: true, showQuickJumper: true, showTotal: (total: number, range: number[]) => `第 ${range[0]}-${range[1]} 题 / 共 ${total} 题` }"
@@ -426,10 +502,14 @@ const columns = [
           </a-tag>
         </template>
         <template v-if="column.key === 'rate'">
-          <span v-if="record.times_attempted > 0">
+          <span v-if="record.times_attempted > 0" :style="{ color: record.times_correct / record.times_attempted >= 0.8 ? '#52c41a' : '#f5222d' }">
             {{ Math.round(record.times_correct / record.times_attempted * 100) }}%
             ({{ record.times_correct }}/{{ record.times_attempted }})
           </span>
+          <span v-else style="color: #ccc">-</span>
+        </template>
+        <template v-if="column.key === 'wrong'">
+          <a-tag v-if="record.is_wrong" color="red" style="font-size: 11px">错题</a-tag>
           <span v-else style="color: #ccc">-</span>
         </template>
         <template v-if="column.key === 'action'">

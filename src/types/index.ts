@@ -23,6 +23,8 @@ export interface Question {
   times_attempted: number
   times_correct: number
   last_attempted: string | null
+  // 是否在错题集中
+  is_wrong?: boolean
 }
 
 /** 题型 */

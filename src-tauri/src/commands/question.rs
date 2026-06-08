@@ -116,13 +116,17 @@ use uuid::Uuid;
 pub fn list_questions(
     state: tauri::State<DbState>,
     bank_id: String,
-) -> Result<Vec<Question>, String> {
+) -> Result<Vec<serde_json::Value>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, bank_id, stem, type, options, answer, explanation,
-                    times_attempted, times_correct, last_attempted
-             FROM questions WHERE bank_id = ?1 ORDER BY rowid",
+            "SELECT q.id, q.bank_id, q.stem, q.type, q.options, q.answer,
+                    q.explanation, q.times_attempted, q.times_correct, q.last_attempted,
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM practice_records pr
+                        WHERE pr.question_id = q.id AND pr.is_correct = 0
+                    ) THEN 1 ELSE 0 END as is_wrong
+             FROM questions q WHERE q.bank_id = ?1 ORDER BY q.rowid",
         )
         .map_err(|e| e.to_string())?;
 
@@ -130,20 +134,19 @@ pub fn list_questions(
         .query_map(rusqlite::params![bank_id], |row| {
             let options_str: String = row.get(4)?;
             let answer_str: String = row.get(5)?;
-            Ok(Question {
-                id: row.get(0)?,
-                bank_id: row.get(1)?,
-                stem: row.get(2)?,
-                r#type: row.get(3)?,
-                options: serde_json::from_str(&options_str).unwrap_or_default(),
-                answer: serde_json::from_str(&answer_str).unwrap_or(serde_json::Value::String(
-                    String::new(),
-                )),
-                explanation: row.get(6)?,
-                times_attempted: row.get(7)?,
-                times_correct: row.get(8)?,
-                last_attempted: row.get(9)?,
-            })
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "bank_id": row.get::<_, String>(1)?,
+                "stem": row.get::<_, String>(2)?,
+                "type": row.get::<_, String>(3)?,
+                "options": serde_json::from_str::<Vec<String>>(&options_str).unwrap_or_default(),
+                "answer": serde_json::from_str::<serde_json::Value>(&answer_str).unwrap_or(serde_json::Value::String(String::new())),
+                "explanation": row.get::<_, String>(6)?,
+                "times_attempted": row.get::<_, u32>(7)?,
+                "times_correct": row.get::<_, u32>(8)?,
+                "last_attempted": row.get::<_, Option<String>>(9)?,
+                "is_wrong": row.get::<_, i32>(10)? != 0,
+            }))
         })
         .map_err(|e| e.to_string())?
         .filter_map(|r| r.ok())
