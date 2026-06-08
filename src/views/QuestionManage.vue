@@ -85,7 +85,7 @@ const filteredQuestions = computed(() => {
     })
   }
   // 按错题集筛选
-  if (filterWrongOnly) {
+  if (filterWrongOnly.value) {
     list = list.filter(q => q.is_wrong)
   }
   return list
