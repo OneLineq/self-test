@@ -666,7 +666,7 @@ function navDotStyle(idx: number): Record<string, string> {
         </a-button>
         <a-space>
           <a-button
-            v-if="mode !== 'wrong' && store.showResult.get(question.id)"
+            v-if="mode !== 'wrong'"
             size="small"
             danger
             @click="markWrong"
