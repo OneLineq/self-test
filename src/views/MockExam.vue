@@ -8,6 +8,10 @@ import { message, Modal } from 'ant-design-vue'
 import {
   ExclamationCircleOutlined,
   ClockCircleOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  CheckOutlined,
+  CloseOutlined,
 } from '@ant-design/icons-vue'
 import { usePracticeStore } from '../stores/practice'
 import { invoke } from '@tauri-apps/api/tauri'
@@ -99,6 +103,7 @@ const typeColors: Record<string, string> = {
 }
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleKeydown)
   try {
     // 先拉取全部试题，用于展示统计
     allQuestions.value = await invoke<Question[]>('get_practice_questions', {
@@ -129,6 +134,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeydown)
   if (timerInterval) clearInterval(timerInterval)
 })
 
@@ -286,10 +292,85 @@ async function doSubmit() {
   }
 }
 
+/** 将答案字母转为选项文字，如 "A" → "A. 选项内容" */
+function formatAnswerText(q: Question, answer: string): string {
+  if (!answer) return '(未作答)'
+  const parts = answer.split(',').filter(Boolean)
+  return parts.map(p => {
+    const idx = p.charCodeAt(0) - 65
+    if (idx >= 0 && idx < q.options.length) {
+      return `${p}. ${q.options[idx].replace(/^[A-D][.、]\s*/, '')}`
+    }
+    return p
+  }).join('；')
+}
+
+/** 用户该题是否答错 */
+function isWrong(q: Question): boolean {
+  return store.userAnswers.has(q.id) && !store.isAnswerCorrect(q.id)
+}
+
+/** 用户该题是否未作答 */
+function isUnanswered(q: Question): boolean {
+  return !store.userAnswers.has(q.id) || !store.userAnswers.get(q.id)
+}
+
+/** 该选项是否为正确答案 */
+function isOptionCorrectAnswer(q: Question, idx: number): boolean {
+  const letter = String.fromCharCode(65 + idx)
+  const correct = q.answer
+  if (Array.isArray(correct)) return correct.includes(letter)
+  return correct === letter
+}
+
+/** 该选项是否为用户选错的选项（用户选了但不是正确答案） */
+function isOptionWrongSelected(q: Question, idx: number): boolean {
+  const letter = String.fromCharCode(65 + idx)
+  const userAns = store.userAnswers.get(q.id) || ''
+  const parts = userAns.split(',').filter(Boolean)
+  if (!parts.includes(letter)) return false
+  // 用户选了该项，但该项不是正确答案
+  return !isOptionCorrectAnswer(q, idx)
+}
+
+/** 审题模式下选项的样式类 */
+function getReviewOptionClass(q: Question, idx: number): string {
+  const letter = String.fromCharCode(65 + idx)
+  const userAns = store.userAnswers.get(q.id) || ''
+  const parts = userAns.split(',').filter(Boolean)
+  const isSelected = parts.includes(letter)
+  const isCorrectOpt = isOptionCorrectAnswer(q, idx)
+
+  if (isCorrectOpt) return 'review-option-correct'
+  if (isSelected && !isCorrectOpt) return 'review-option-wrong'
+  return ''
+}
+
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+}
+
+/** 键盘快捷键：A/B/C/D 快速选择首个未答题目的对应选项 */
+function handleKeydown(e: KeyboardEvent) {
+  const tag = (e.target as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  if (examSubmitted.value || settingStep.value !== 'exam') return
+
+  // 找到第一个未答的选择题
+  const firstUnanswered = store.questions.find(q => {
+    if (q.type === 'fill' || q.type === 'judge') return false
+    return !store.userAnswers.has(q.id) || !store.userAnswers.get(q.id)
+  })
+  if (!firstUnanswered) return
+
+  const key = e.key.toLowerCase()
+  const optionIndex = key.charCodeAt(0) - 97 // 'a'=0, 'b'=1, ...
+  if (optionIndex < 0 || optionIndex >= firstUnanswered.options.length) return
+
+  e.preventDefault()
+  selectOption(firstUnanswered.id, optionIndex)
 }
 </script>
 
@@ -467,20 +548,110 @@ function formatTime(seconds: number): string {
       </div>
     </div>
 
-    <!-- ===== 考试结果 ===== -->
-    <a-result
-      v-else
-      :status="examScore.percentage >= 60 ? 'success' : 'error'"
-      :title="examScore.percentage >= 60 ? '考试通过！' : '还需努力'"
-      :sub-title="`得分：${examScore.correct} / ${examScore.total}（${examScore.percentage}%）`"
-    >
-      <template #extra>
-        <a-space>
-          <a-button @click="router.push('/')">返回首页</a-button>
-          <a-button type="primary" @click="router.go(0)">重新考试</a-button>
-        </a-space>
-      </template>
-    </a-result>
+    <!-- ===== 考试结果 + 错题回顾 ===== -->
+    <div v-else class="result-page">
+      <!-- 成绩总览 -->
+      <div class="result-header">
+        <div
+          class="result-badge"
+          :style="{ background: examScore.percentage >= 60 ? '#52c41a' : '#f5222d' }"
+        >
+          <CheckCircleOutlined v-if="examScore.percentage >= 60" />
+          <CloseCircleOutlined v-else />
+        </div>
+        <div class="result-title" :style="{ color: examScore.percentage >= 60 ? '#52c41a' : '#f5222d' }">
+          {{ examScore.percentage >= 60 ? '考试通过！' : '还需努力' }}
+        </div>
+        <div class="result-score">
+          {{ examScore.correct }} / {{ examScore.total }} &nbsp;
+          <span :style="{ color: examScore.percentage >= 60 ? '#52c41a' : '#f5222d', fontWeight: 'bold' }">
+            （{{ examScore.percentage }}%）
+          </span>
+        </div>
+        <div class="result-actions">
+          <a-space>
+            <a-button @click="router.push('/')">返回首页</a-button>
+            <a-button type="primary" @click="router.go(0)">重新考试</a-button>
+          </a-space>
+        </div>
+      </div>
+
+      <!-- 错题回顾 -->
+      <div class="review-section">
+        <h3 style="margin-bottom: 12px">
+          📝 答题详情
+          <span style="font-size: 13px; color: #999; font-weight: normal; margin-left: 8px">
+            共 {{ store.totalCount }} 题，答对 {{ store.correctCount }} 题，答错 {{ store.totalCount - store.correctCount }} 题
+          </span>
+        </h3>
+
+        <div
+          v-for="(q, qIdx) in store.questions"
+          :key="q.id"
+          class="review-card"
+          :class="{ 'review-card-wrong': isWrong(q) || isUnanswered(q) }"
+        >
+          <div class="review-card-header">
+            <span class="review-q-number">{{ qIdx + 1 }}.</span>
+            <a-tag v-if="q.type" :color="typeColors[q.type]" size="small">
+              {{ typeLabels[q.type] || q.type }}
+            </a-tag>
+            <span style="flex: 1; margin-left: 6px">{{ q.stem }}</span>
+            <span v-if="isUnanswered(q)" class="review-status review-status-unanswered">未作答</span>
+            <span v-else-if="store.isAnswerCorrect(q.id)" class="review-status review-status-correct">
+              <CheckCircleOutlined /> 正确
+            </span>
+            <span v-else class="review-status review-status-wrong">
+              <CloseCircleOutlined /> 错误
+            </span>
+          </div>
+
+          <!-- 选择题选项回顾 -->
+          <div v-if="q.options.length > 0" class="review-options">
+            <div
+              v-for="(opt, idx) in q.options"
+              :key="idx"
+              class="review-option"
+              :class="getReviewOptionClass(q, idx)"
+            >
+              <span class="option-letter">{{ String.fromCharCode(65 + idx) }}</span>
+              <span class="option-text">{{ opt.replace(/^[A-D][.、]\s*/, '') }}</span>
+              <CheckOutlined v-if="isOptionCorrectAnswer(q, idx)" class="option-icon option-icon-correct" />
+              <CloseOutlined v-if="isOptionWrongSelected(q, idx)" class="option-icon option-icon-wrong" />
+            </div>
+          </div>
+
+          <!-- 用户答案 vs 正确答案 -->
+          <div class="review-answer-row">
+            <div class="review-answer-item">
+              <span style="color: #999">你的答案：</span>
+              <span
+                v-if="isUnanswered(q)"
+                style="color: #999; font-style: italic"
+              >（未作答）</span>
+              <span
+                v-else
+                :style="{ color: store.isAnswerCorrect(q.id) ? '#52c41a' : '#f5222d', fontWeight: 500 }"
+              >
+                {{ formatAnswerText(q, store.userAnswers.get(q.id) || '') }}
+              </span>
+            </div>
+            <div v-if="!store.isAnswerCorrect(q.id)" class="review-answer-item">
+              <span style="color: #999">正确答案：</span>
+              <span style="color: #52c41a; font-weight: 500">
+                {{ formatAnswerText(q, Array.isArray(q.answer) ? q.answer.join(',') : q.answer) }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 解析 -->
+          <div v-if="q.explanation" class="review-explanation">
+            <span style="color: #1890ff; font-weight: 500">💡 解析：</span>
+            {{ q.explanation }}
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -560,5 +731,173 @@ function formatTime(seconds: number): string {
 .option-text {
   flex: 1;
   font-size: 14px;
+}
+
+/* ===== 考试结果 + 错题回顾 ===== */
+.result-page {
+  padding-bottom: 40px;
+}
+
+.result-header {
+  text-align: center;
+  padding: 32px 16px;
+  background: linear-gradient(135deg, #fafafa 0%, #f0f5ff 100%);
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.result-badge {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 28px;
+  margin-bottom: 12px;
+}
+
+.result-title {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.result-score {
+  font-size: 18px;
+  color: #555;
+  margin-bottom: 16px;
+}
+
+.result-actions {
+  margin-top: 8px;
+}
+
+.review-section {
+  margin-top: 8px;
+}
+
+.review-card {
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  background: #fff;
+  transition: box-shadow 0.2s;
+}
+
+.review-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.review-card-wrong {
+  border-left: 4px solid #f5222d;
+}
+
+.review-card-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.review-q-number {
+  font-weight: bold;
+  color: #fa8c16;
+  margin-right: 4px;
+}
+
+.review-status {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.review-status-correct {
+  color: #52c41a;
+}
+
+.review-status-wrong {
+  color: #f5222d;
+}
+
+.review-status-unanswered {
+  color: #999;
+}
+
+.review-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 8px 24px;
+}
+
+.review-option {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.review-option-correct {
+  border-color: #b7eb8f !important;
+  background: #f6ffed !important;
+}
+
+.review-option-correct .option-letter {
+  background: #52c41a;
+  color: #fff;
+}
+
+.review-option-wrong {
+  border-color: #ffa39e !important;
+  background: #fff2f0 !important;
+}
+
+.review-option-wrong .option-letter {
+  background: #f5222d;
+  color: #fff;
+}
+
+.review-option .option-icon {
+  margin-left: auto;
+  font-size: 14px;
+}
+
+.review-option .option-icon-correct {
+  color: #52c41a;
+}
+
+.review-option .option-icon-wrong {
+  color: #f5222d;
+}
+
+.review-answer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #fafafa;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.review-answer-item {
+  line-height: 1.6;
+}
+
+.review-explanation {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #e6f7ff;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.6;
 }
 </style>

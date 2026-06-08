@@ -19,6 +19,15 @@ fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
+            // Windows: 便携模式，数据库放在 exe 同目录，拷文件夹即可迁移
+            // Linux: 遵循 XDG 规范，放在 ~/.local/share/...
+            #[cfg(target_os = "windows")]
+            let app_dir = std::env::current_exe()
+                .expect("Failed to get executable path")
+                .parent()
+                .expect("Failed to get executable directory")
+                .to_path_buf();
+            #[cfg(not(target_os = "windows"))]
             let app_dir = app
                 .path_resolver()
                 .app_data_dir()

@@ -170,7 +170,60 @@ async function loadSavedAnswer(): Promise<string> {
   return ''
 }
 
+/** 键盘快捷键处理 */
+function handleKeydown(e: KeyboardEvent) {
+  // 输入框中不拦截
+  const tag = (e.target as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+  const q = question.value
+  if (!q) return
+
+  switch (e.key) {
+    case 'ArrowLeft':
+    case 'ArrowUp':
+      e.preventDefault()
+      handlePrev()
+      break
+    case 'ArrowRight':
+    case 'ArrowDown':
+      e.preventDefault()
+      handleNext()
+      break
+    case 'a':
+    case 'A':
+      e.preventDefault()
+      if (q.options.length >= 1) selectOption(0)
+      break
+    case 'b':
+    case 'B':
+      e.preventDefault()
+      if (q.options.length >= 2) selectOption(1)
+      break
+    case 'c':
+    case 'C':
+      e.preventDefault()
+      if (q.options.length >= 3) selectOption(2)
+      break
+    case 'd':
+    case 'D':
+      e.preventDefault()
+      if (q.options.length >= 4) selectOption(3)
+      break
+    case 'Enter':
+      if (
+        selectedAnswer.value &&
+        (Array.isArray(q.answer) || (indeterminateMode.value && isChoiceType(q.type)) || q.type === 'fill')
+      ) {
+        e.preventDefault()
+        submitMulti()
+      }
+      break
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener('keydown', handleKeydown)
   try {
     await store.loadQuestions(bankId, mode)
     // 顺序练习：检测断点，弹窗让用户选择接续还是从头
@@ -223,6 +276,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(async () => {
+  window.removeEventListener('keydown', handleKeydown)
   await saveProgress()
 })
 
@@ -301,6 +355,10 @@ function selectOption(optIndex: number) {
     selectedAnswer.value = letter
     // 单选题直接提交
     store.submitAnswer(qid, letter)
+    // 正确则自动跳转下一题
+    if (store.isAnswerCorrect(qid) && store.currentIndex < store.totalCount - 1) {
+      setTimeout(() => handleNext(), 400)
+    }
   }
 }
 
@@ -331,7 +389,12 @@ function getOptionClass(optIndex: number): string {
 // 多选提交
 function submitMulti() {
   if (!question.value || !selectedAnswer.value) return
-  store.submitAnswer(question.value.id, selectedAnswer.value)
+  const qid = question.value.id
+  store.submitAnswer(qid, selectedAnswer.value)
+  // 正确则自动跳转下一题
+  if (store.isAnswerCorrect(qid) && store.currentIndex < store.totalCount - 1) {
+    setTimeout(() => handleNext(), 400)
+  }
 }
 
 function handleNext() {

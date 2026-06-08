@@ -8,7 +8,7 @@
   },
   "package": {
     "productName": "SelfTest",
-    "version": "1.0.1"
+    "version": "1.0.4"
   },
   "tauri": {
     "allowlist": {
@@ -29,6 +29,11 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
+      "windows": {
+        "webviewInstallMode": {
+          "type": "skip"
+        }
+      },
       "deb": {
         "depends": ["libwebkit2gtk-4.0-37", "libgtk-3-0", "libappindicator3-1"]
       }

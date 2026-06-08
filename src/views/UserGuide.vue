@@ -132,9 +132,10 @@ import { FileTextOutlined } from '@ant-design/icons-vue'
 
       <a-typography-title :level="4">九、快捷键</a-typography-title>
       <ul>
-        <li><kbd>←</kbd> / <kbd>→</kbd> 方向键 — 切换上一题 / 下一题（练习模式）</li>
-        <li><kbd>A</kbd> <kbd>B</kbd> <kbd>C</kbd> <kbd>D</kbd> — 快速选择对应选项（单选题模式）</li>
-        <li><kbd>Enter</kbd> — 确认提交多选答案 / 填空题答案</li>
+        <li><kbd>←</kbd> <kbd>↑</kbd> — 上一题（练习模式）</li>
+        <li><kbd>→</kbd> <kbd>↓</kbd> — 下一题（练习模式）</li>
+        <li><kbd>A</kbd> <kbd>B</kbd> <kbd>C</kbd> <kbd>D</kbd> — 快速选择对应选项（练习 & 考试模式）</li>
+        <li><kbd>Enter</kbd> — 确认提交多选 / 填空答案</li>
       </ul>
     </a-typography>
   </div>
