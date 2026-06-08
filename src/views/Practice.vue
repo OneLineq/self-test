@@ -442,6 +442,48 @@ function exitPractice() {
   })
 }
 
+/** 手动标记当前题为错题 */
+async function markWrong() {
+  const q = question.value
+  if (!q) return
+  try {
+    await invoke('mark_question_wrong', { questionId: q.id, bankId })
+    message.success('已标记为错题')
+  } catch (e) {
+    message.error('标记失败: ' + e)
+  }
+}
+
+/** 从错题集中移除当前题 */
+async function removeWrong() {
+  const q = question.value
+  if (!q) return
+  Modal.confirm({
+    title: '移出错题集',
+    icon: h(ExclamationCircleOutlined),
+    content: `确定将本题「${q.stem.slice(0, 50)}${q.stem.length > 50 ? '...' : ''}」移出错题集吗？`,
+    okText: '移出',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        await invoke('remove_from_wrong', { questionId: q.id })
+        message.success('已移出错题集')
+        // 如果还有下一题则跳转，否则回到首页
+        if (store.currentIndex < store.totalCount - 1) {
+          selectedAnswer.value = ''
+          store.next()
+        } else if (store.currentIndex > 0) {
+          store.prev()
+        } else {
+          router.push('/')
+        }
+      } catch (e) {
+        message.error('移出失败: ' + e)
+      }
+    },
+  })
+}
+
 const progress = computed(() =>
   store.totalCount > 0 ? Math.round((store.currentIndex / store.totalCount) * 100) : 0
 )
@@ -622,6 +664,24 @@ function navDotStyle(idx: number): Record<string, string> {
         <a-button :disabled="store.currentIndex === 0" @click="handlePrev">
           <LeftOutlined /> 上一题
         </a-button>
+        <a-space>
+          <a-button
+            v-if="mode !== 'wrong' && store.showResult.get(question.id)"
+            size="small"
+            danger
+            @click="markWrong"
+          >
+            <CloseOutlined /> 标记为错题
+          </a-button>
+          <a-button
+            v-if="mode === 'wrong'"
+            size="small"
+            danger
+            @click="removeWrong"
+          >
+            <DeleteOutlined /> 移出错题集
+          </a-button>
+        </a-space>
         <span style="color: #999; font-size: 13px">
           {{ store.currentIndex + 1 }} / {{ store.totalCount }}
         </span>

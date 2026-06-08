@@ -585,3 +585,46 @@ pub fn clear_practice_progress(
 
     Ok(())
 }
+
+/// 手动将某道题标记为错题（插入一条 is_correct=0 的练习记录）
+#[tauri::command]
+pub fn mark_question_wrong(
+    state: tauri::State<DbState>,
+    question_id: String,
+    bank_id: String,
+) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    conn.execute(
+        "INSERT INTO practice_records (question_id, bank_id, user_answer, is_correct, mode, timestamp)
+         VALUES (?1, ?2, 'manual_mark', 0, 'manual', ?3)",
+        rusqlite::params![question_id, bank_id, now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "UPDATE questions SET times_attempted = times_attempted + 1, last_attempted = ?1 WHERE id = ?2",
+        rusqlite::params![now, question_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// 将某道题移出错题集（删除所有 is_correct=0 的练习记录）
+#[tauri::command]
+pub fn remove_from_wrong(
+    state: tauri::State<DbState>,
+    question_id: String,
+) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "DELETE FROM practice_records WHERE question_id = ?1 AND is_correct = 0",
+        rusqlite::params![question_id],
+    )
+    .map_err(|e| format!("移出错题集失败: {}", e))?;
+
+    Ok(())
+}

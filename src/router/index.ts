@@ -49,6 +49,11 @@ const router = createRouter({
       component: () => import('../views/QuestionManage.vue'),
     },
     {
+      path: '/wrong-manage/:bankId',
+      name: 'WrongManage',
+      component: () => import('../views/WrongManage.vue'),
+    },
+    {
       path: '/banks',
       name: 'BankManage',
       component: () => import('../views/BankManage.vue'),

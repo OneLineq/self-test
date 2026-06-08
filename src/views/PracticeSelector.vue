@@ -125,8 +125,8 @@ function startPractice(bankId: string) {
                 <template #icon><PlayCircleOutlined /></template>
                 开始{{ title }}
               </a-button>
-              <a-button @click="router.push(`/questions/${bank.id}`)">
-                管理题目
+              <a-button @click="router.push(mode === 'wrong' ? `/wrong-manage/${bank.id}` : `/questions/${bank.id}`)">
+                {{ mode === 'wrong' ? '管理错题' : '管理题目' }}
               </a-button>
             </template>
           </a-list-item>

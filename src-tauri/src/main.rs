@@ -69,6 +69,9 @@ fn main() {
             commands::practice::save_practice_progress,
             commands::practice::load_practice_progress,
             commands::practice::clear_practice_progress,
+            // 错题管理
+            commands::practice::mark_question_wrong,
+            commands::practice::remove_from_wrong,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
