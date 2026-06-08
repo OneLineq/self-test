@@ -55,8 +55,8 @@ import { FileTextOutlined } from '@ant-design/icons-vue'
 
       <a-typography-title :level="5">4.2 答题操作</a-typography-title>
       <ul>
-        <li><strong>单选题</strong>：点击选项后自动提交答案并显示正误。</li>
-        <li><strong>多选题</strong>：点击选择多个选项，点击"确认"按钮后提交。</li>
+        <li><strong>单选题</strong>：点击选项后自动提交答案并显示正误。答对自动跳转下一题，答错停留查看解析。</li>
+        <li><strong>多选题</strong>：点击选择多个选项，点击"确认"按钮后提交。答对自动跳转下一题，答错停留。</li>
         <li><strong>判断题</strong>：点击"正确"或"错误"按钮提交。</li>
         <li><strong>填空题</strong>：输入答案后按回车或点击提交按钮。</li>
         <li><strong>不定项开关</strong>：练习界面顶部有一个"不定项"开关，开启后所有选择题（单选/判断）都变为多选模式，适合不确定答案数量时使用。</li>
@@ -66,9 +66,11 @@ import { FileTextOutlined } from '@ant-design/icons-vue'
       <ul>
         <li>每题底部显示当前题号和总题数（如 5/20）。</li>
         <li>通过"上一题"/"下一题"按钮或键盘方向键切换题目。</li>
-        <li>底部题号条可点击跳转到任意题目，当前题号高亮，已答题目标记为蓝色。</li>
+        <li>底部题号条可点击跳转到任意题目，当前题号高亮，已答题目标记为颜色（绿色正确、红色错误）。</li>
         <li>支持输入题号直接跳转。</li>
-        <li><strong>刷题记忆面板</strong>：每道题右侧可展开查看该题的历史练习记录，包括每次的作答、正确率、掌握程度标签（建议复习/已掌握），也支持清除单道题的练习记忆。</li>
+        <li><strong>标记为错题</strong>：练习模式下，任意题目作答后可在底部点击"标记为错题"按钮，手动将该题加入错题集，方便后续针对性复习。</li>
+        <li><strong>移出错题集</strong>：在错题练习模式下，底部会显示"移出错题集"按钮，可将已掌握的题目移出。</li>
+        <li><strong>刷题记忆面板</strong>：每道题上方可展开查看该题的历史练习记录，包括每次的作答、正确率、掌握程度标签（建议复习/已掌握），也支持清除单道题的练习记忆。</li>
       </ul>
 
       <a-typography-title :level="5">4.4 模拟考试</a-typography-title>
@@ -78,6 +80,7 @@ import { FileTextOutlined } from '@ant-design/icons-vue'
         <li>所有题目在同一页面显示，可上下滚动浏览。</li>
         <li>顶部显示倒计时，时间归零时自动交卷。</li>
         <li>点击"交卷"按钮后自动计算得分并显示正确率。</li>
+        <li><strong>错题回顾</strong>：交卷后自动进入答题详情页面，逐题展示每道题的正确/错误状态、选项高亮（绿色=正确答案、红色=你选错的选项）、你的答案与正确答案对比，以及题目解析，方便查漏补缺。</li>
       </ul>
 
       <a-typography-title :level="4">五、试题管理</a-typography-title>
@@ -104,13 +107,27 @@ import { FileTextOutlined } from '@ant-design/icons-vue'
       <a-typography-title :level="5">5.3 Excel 导出</a-typography-title>
       <p>点击"导出 Excel"按钮，选择保存位置，将当前题库所有题目导出为 .xlsx 文件（包含题型、题干、选项、答案、解析列）。</p>
 
-      <a-typography-title :level="5">5.4 批量操作</a-typography-title>
+      <a-typography-title :level="5">5.4 筛选功能</a-typography-title>
+      <ul>
+        <li>试题管理页面上方提供筛选工具栏，支持按<strong>题型</strong>（单选/多选/判断/填空）、<strong>正确率</strong>（高于或低于指定百分比）、以及<strong>错题集</strong>（仅显示被标记为错题的题目）进行筛选，方便快速定位特定题目。</li>
+      </ul>
+
+      <a-typography-title :level="5">5.5 批量操作</a-typography-title>
       <ul>
         <li>勾选多个题目后，可批量设置题型，或批量删除。</li>
         <li>点击"清空题库"可一键删除当前题库的所有题目（不可恢复）。</li>
       </ul>
 
-      <a-typography-title :level="4">六、练习记忆</a-typography-title>
+      <a-typography-title :level="4">六、错题管理</a-typography-title>
+      <p>在错题练习的选择题库页面上，点击题库右侧的「管理错题」按钮，进入错题管理页面。</p>
+      <ul>
+        <li>列出当前题库中所有曾被标记为错误的题目（含手动标记的错题）。</li>
+        <li>每道题显示题型、题干、选项、正确答案和解析。</li>
+        <li>点击「移出错题集」可将该题从错题集中移除（删除对应的错误练习记录），该题将不再出现在错题练习中。</li>
+        <li>移出后列表自动更新，无需刷新页面。</li>
+      </ul>
+
+      <a-typography-title :level="4">七、练习记忆</a-typography-title>
       <p>在「练习记忆」页面可以查看全局统计（累计练习次数、正确数、错误数、正确率），以及每个题库的详细练习记录。</p>
       <ul>
         <li>点击题库卡片可展开查看该题库的所有练习记录（按时间倒序排列）。</li>
@@ -118,19 +135,21 @@ import { FileTextOutlined } from '@ant-design/icons-vue'
         <li>点击"清除记忆"可删除某个题库的所有练习记录并重置题目统计（不可恢复）。</li>
       </ul>
 
-      <a-typography-title :level="4">七、选项颜色说明</a-typography-title>
+      <a-typography-title :level="4">八、选项颜色说明</a-typography-title>
       <ul>
         <li><span style="color: #52c41a; font-weight: bold">绿色</span> — 正确答案</li>
         <li><span style="color: #f5222d; font-weight: bold">红色</span> — 你选择了错误选项</li>
       </ul>
 
-      <a-typography-title :level="4">八、数据存储</a-typography-title>
+      <a-typography-title :level="4">九、数据存储</a-typography-title>
       <p>
-        所有题库、题目和练习记录均存储在本地 SQLite 数据库中，位于系统应用数据目录下。
+        所有题库、题目和练习记录均存储在本地 SQLite 数据库中。
+        <strong>Windows</strong>：数据库文件位于 <code>SelfTest.exe</code> 所在目录下的 <code>quiz_app.db</code>，拷贝整个文件夹即可迁移数据，实现便携使用。
+        <strong>Linux</strong>：位于 <code>~/.local/share/com.oneline.self-test/quiz_app.db</code>。
         数据不会上传到任何服务器，完全离线可用，无需网络连接。
       </p>
 
-      <a-typography-title :level="4">九、快捷键</a-typography-title>
+      <a-typography-title :level="4">十、快捷键</a-typography-title>
       <ul>
         <li><kbd>←</kbd> <kbd>↑</kbd> — 上一题（练习模式）</li>
         <li><kbd>→</kbd> <kbd>↓</kbd> — 下一题（练习模式）</li>
