@@ -628,3 +628,26 @@ pub fn remove_from_wrong(
 
     Ok(())
 }
+
+/// 获取某题库中所有错题（有 is_correct=0 记录）的 ID 列表
+#[tauri::command]
+pub fn list_wrong_question_ids(
+    state: tauri::State<DbState>,
+    bank_id: String,
+) -> Result<Vec<String>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT question_id FROM practice_records WHERE bank_id = ?1 AND is_correct = 0",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let ids = stmt
+        .query_map(rusqlite::params![bank_id], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(ids)
+}

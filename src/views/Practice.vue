@@ -35,6 +35,9 @@ const shuffleMode = ref(false)
 /** 当前题目的选项排列映射：displayIdx → originalIdx */
 const optionShuffleMap = ref<number[]>([])
 
+/** 当前练习中已标记为错题的题目 ID 集合（用于 toggle 按钮显示） */
+const wrongSet = ref<Set<string>>(new Set())
+
 /** 生成随机排列（Fisher-Yates） */
 function generateShuffle(n: number): number[] {
   const indices = Array.from({ length: n }, (_, i) => i)
@@ -226,6 +229,13 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   try {
     await store.loadQuestions(bankId, mode)
+    // 加载该题库中已有的错题 ID，用于 toggle 按钮初始状态
+    if (mode !== 'wrong') {
+      try {
+        const ids = await invoke<string[]>('list_wrong_question_ids', { bankId })
+        wrongSet.value = new Set(ids)
+      } catch (_) { /* 静默 */ }
+    }
     // 顺序练习：检测断点，弹窗让用户选择接续还是从头
     if (mode === 'sequential') {
       const savedIdx = await loadProgress()
@@ -442,19 +452,34 @@ function exitPractice() {
   })
 }
 
-/** 手动标记当前题为错题 */
-async function markWrong() {
+/** 切换当前题的错题标记状态 */
+async function toggleWrong() {
   const q = question.value
   if (!q) return
-  try {
-    await invoke('mark_question_wrong', { questionId: q.id, bankId })
-    message.success('已标记为错题')
-  } catch (e) {
-    message.error('标记失败: ' + e)
+  if (wrongSet.value.has(q.id)) {
+    // 已在错题集 → 移出
+    try {
+      await invoke('remove_from_wrong', { questionId: q.id })
+      wrongSet.value.delete(q.id)
+      wrongSet.value = new Set(wrongSet.value) // 触发响应式
+      message.success('已移出错题集')
+    } catch (e) {
+      message.error('移出失败: ' + e)
+    }
+  } else {
+    // 标记为错题
+    try {
+      await invoke('mark_question_wrong', { questionId: q.id, bankId })
+      wrongSet.value.add(q.id)
+      wrongSet.value = new Set(wrongSet.value)
+      message.success('已标记为错题')
+    } catch (e) {
+      message.error('标记失败: ' + e)
+    }
   }
 }
 
-/** 从错题集中移除当前题 */
+/** 从错题集中移除当前题（错题模式专用，带确认弹窗和自动跳转） */
 async function removeWrong() {
   const q = question.value
   if (!q) return
@@ -668,10 +693,12 @@ function navDotStyle(idx: number): Record<string, string> {
           <a-button
             v-if="mode !== 'wrong'"
             size="small"
-            danger
-            @click="markWrong"
+            :type="wrongSet.has(question.id) ? 'primary' : 'default'"
+            :danger="!wrongSet.has(question.id)"
+            :style="wrongSet.has(question.id) ? { background: '#f5222d', borderColor: '#f5222d', color: '#fff' } : {}"
+            @click="toggleWrong"
           >
-            <CloseOutlined /> 标记为错题
+            {{ wrongSet.has(question.id) ? '错题' : '标记为错题' }}
           </a-button>
           <a-button
             v-if="mode === 'wrong'"
