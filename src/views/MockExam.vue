@@ -513,6 +513,10 @@ function handleKeydown(e: KeyboardEvent) {
           <a-switch v-model:checked="shuffleMode" size="small" />
           <span style="font-size: 12px; color: #999">打乱顺序</span>
         </a-space>
+        <a-space style="margin-left: 8px">
+          <a-switch v-model:checked="indeterminateMode" size="small" />
+          <span style="font-size: 12px; color: #999">不定项</span>
+        </a-space>
         <a-button
           type="primary"
           danger
