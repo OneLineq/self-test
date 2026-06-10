@@ -442,6 +442,22 @@ function handleKeydown(e: KeyboardEvent) {
             </span>
           </a-form-item>
 
+          <!-- 打乱选项顺序 -->
+          <a-form-item>
+            <template #label>
+              <span>
+                打乱选项顺序
+                <a-tooltip title="开启后，每道题的选项顺序会被随机打乱，防止背答案">
+                  <ExclamationCircleOutlined style="color: #999; font-size: 12px" />
+                </a-tooltip>
+              </span>
+            </template>
+            <a-switch v-model:checked="shuffleMode" />
+            <span style="margin-left: 8px; color: #999; font-size: 12px">
+              随机排列各题选项顺序
+            </span>
+          </a-form-item>
+
           <!-- 考试时间 -->
           <a-form-item label="考试时间">
             <a-row :gutter="16">
