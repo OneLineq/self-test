@@ -2,12 +2,15 @@
 // 刷题助手 — SQLite 数据库初始化与管理
 // ============================================================
 use rusqlite::Connection;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-pub struct DbState(pub Mutex<Connection>);
+pub struct DbState {
+    pub conn: Mutex<Connection>,
+    pub db_path: PathBuf,
+}
 
-pub fn init_db(app_dir: &Path) -> Connection {
+pub fn init_db(app_dir: &Path) -> (Connection, PathBuf) {
     std::fs::create_dir_all(app_dir).ok();
     let db_path = app_dir.join("quiz_app.db");
     let conn = Connection::open(&db_path).expect("Failed to open database");
@@ -64,5 +67,5 @@ pub fn init_db(app_dir: &Path) -> Connection {
     )
     .expect("Failed to create tables");
 
-    conn
+    (conn, db_path)
 }

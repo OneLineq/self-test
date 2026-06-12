@@ -193,6 +193,7 @@ function formatAnswerText(q: Question, answer: string | string[]): string {
 .wrong-stem {
   flex: 1;
   font-size: 15px;
+  white-space: pre-line;
 }
 
 .wrong-options {
@@ -244,5 +245,6 @@ function formatAnswerText(q: Question, answer: string | string[]): string {
   border-radius: 6px;
   font-size: 13px;
   line-height: 1.6;
+  white-space: pre-line;
 }
 </style>

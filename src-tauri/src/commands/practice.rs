@@ -20,7 +20,7 @@ pub fn get_practice_questions(
     limit: Option<u32>,
     per_type_limits: Option<HashMap<String, u32>>,
 ) -> Result<Vec<Question>, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     // ===== 按题型分组随机抽取（模拟考试用） =====
     if let Some(ref ptl) = per_type_limits {
@@ -34,7 +34,7 @@ pub fn get_practice_questions(
                     .prepare(
                         "SELECT id, bank_id, stem, type, options, answer, explanation,
                                 times_attempted, times_correct, last_attempted
-                         FROM questions WHERE bank_id=?1 AND type=?2
+                         FROM questions WHERE bank_id=?1 AND COALESCE(TRIM(type), '') = ?2
                          ORDER BY RANDOM() LIMIT ?3",
                     )
                     .map_err(|e| e.to_string())?;
@@ -178,7 +178,7 @@ pub fn record_practice(
     is_correct: bool,
     mode: String,
 ) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     conn.execute(
@@ -213,7 +213,7 @@ pub fn get_practice_stats(
     state: tauri::State<DbState>,
     bank_id: String,
 ) -> Result<serde_json::Value, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     let total: u32 = conn
         .query_row(
@@ -270,7 +270,7 @@ pub fn get_practice_stats(
 pub fn get_global_stats(
     state: tauri::State<DbState>,
 ) -> Result<serde_json::Value, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     let total_banks: u32 = conn
         .query_row("SELECT COUNT(*) FROM banks", [], |row| row.get(0))
@@ -358,7 +358,7 @@ pub fn get_practice_records(
     bank_id: String,
     limit: Option<u32>,
 ) -> Result<Vec<PracticeRecord>, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let limit = limit.unwrap_or(100);
 
     let mut stmt = conn
@@ -394,7 +394,7 @@ pub fn get_practice_memory(
     state: tauri::State<DbState>,
     bank_id: String,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -435,7 +435,7 @@ pub fn clear_practice_memory(
     state: tauri::State<DbState>,
     bank_id: String,
 ) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     conn.execute(
         "DELETE FROM practice_records WHERE bank_id = ?1",
@@ -458,7 +458,7 @@ pub fn get_question_memory(
     state: tauri::State<DbState>,
     question_id: String,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -499,7 +499,7 @@ pub fn clear_question_memory(
     state: tauri::State<DbState>,
     question_id: String,
 ) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     conn.execute(
         "DELETE FROM practice_records WHERE question_id = ?1",
@@ -524,7 +524,7 @@ pub fn save_practice_progress(
     current_index: i32,
     selected_answer: String,
 ) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     conn.execute(
@@ -547,7 +547,7 @@ pub fn load_practice_progress(
     state: tauri::State<DbState>,
     bank_id: String,
 ) -> Result<Option<serde_json::Value>, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     let result = conn.query_row(
         "SELECT current_index, selected_answer, updated_at
@@ -575,7 +575,7 @@ pub fn clear_practice_progress(
     state: tauri::State<DbState>,
     bank_id: String,
 ) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     conn.execute(
         "DELETE FROM practice_progress WHERE bank_id = ?1",
@@ -593,7 +593,7 @@ pub fn mark_question_wrong(
     question_id: String,
     bank_id: String,
 ) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     conn.execute(
@@ -618,7 +618,7 @@ pub fn remove_from_wrong(
     state: tauri::State<DbState>,
     question_id: String,
 ) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     conn.execute(
         "DELETE FROM practice_records WHERE question_id = ?1 AND is_correct = 0",
@@ -635,7 +635,7 @@ pub fn list_wrong_question_ids(
     state: tauri::State<DbState>,
     bank_id: String,
 ) -> Result<Vec<String>, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(

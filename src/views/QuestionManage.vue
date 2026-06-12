@@ -42,6 +42,7 @@ const columnMapping = reactive({
   type_col: null as number | null,
   option_start_col: 3,
   option_count: 4,
+  option_cols: [] as number[],
   answer_col: 7,
   explanation_col: null as number | null,
 })
@@ -196,35 +197,14 @@ async function handleDelete(q: Question) {
 
 const importLoading = ref(false)
 
-// #region agent log
-function agentLog(location: string, message: string, hypothesisId: string, data: Record<string, unknown> = {}) {
-  fetch('http://127.0.0.1:7299/ingest/6b505492-1aff-4287-9ac5-b363715194e7', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c82dbd' },
-    body: JSON.stringify({
-      sessionId: 'c82dbd',
-      location,
-      message,
-      hypothesisId,
-      data,
-      timestamp: Date.now(),
-      runId: 'import-excel-kylin',
-    }),
-  }).catch(() => {})
-}
-// #endregion
-
 // ============== 导入 ==============
 async function pickExcelFile() {
   if (importLoading.value) return
   importLoading.value = true
-  agentLog('QuestionManage.vue:pickExcelFile', 'click import excel', 'J')
   try {
-    agentLog('QuestionManage.vue:pickExcelFile', 'invoking pick_file', 'J')
     const path = await open({
       title: '选择表格文件',
     }) as string | null
-    agentLog('QuestionManage.vue:pickExcelFile', 'pick_file returned', 'J', { hasPath: !!path })
     if (path) {
       excelPath.value = path
       importVisible.value = true
@@ -239,7 +219,6 @@ async function pickExcelFile() {
       }
     }
   } catch (e) {
-    agentLog('QuestionManage.vue:pickExcelFile', 'pick_file failed', 'J', { error: String(e) })
     message.error('选择文件失败: ' + e)
   } finally {
     importLoading.value = false
@@ -247,41 +226,176 @@ async function pickExcelFile() {
 }
 
 async function previewExcel() {
-  agentLog('QuestionManage.vue:previewExcel', 'invoking preview_excel', 'K', { path: excelPath.value })
   try {
     excelPreview.value = await invoke('preview_excel', { filePath: excelPath.value, sheetName: sheetName.value })
-    agentLog('QuestionManage.vue:previewExcel', 'preview_excel returned', 'K', {
-      headers: excelPreview.value?.headers?.length ?? 0,
-    })
     autoDetectMapping()
   } catch (e) {
-    agentLog('QuestionManage.vue:previewExcel', 'preview_excel failed', 'K', { error: String(e) })
     message.error('预览文件失败: ' + e)
     importVisible.value = false
   }
 }
 
+/** 判断表头是否为选项列 */
+function isOptionHeader(header: string): boolean {
+  const raw = header.trim()
+  if (!raw) return false
+  const h = raw.toLowerCase()
+  return (
+    /^[a-j]$/.test(h) ||
+    /^选项\s*[a-j0-9一二三四五六七八九十]$/.test(h) ||
+    /^option\s*[a-j0-9]$/.test(h) ||
+    /^[a-j]\s*选项$/.test(h) ||
+    /^[a-j]选项$/.test(h) ||
+    /^choice\s*[a-j0-9]$/.test(h) ||
+    /^备选项?\s*[a-j0-9]$/.test(h)
+  )
+}
+
+/** 从选项表头提取选项标识（用于去重合并单元格产生的重复表头） */
+function getOptionLabel(header: string): string | null {
+  const raw = header.trim()
+  if (!raw) return null
+  const h = raw.toLowerCase()
+  const patterns = [
+    /^([a-j])$/,
+    /^选项\s*([a-j])$/,
+    /^([a-j])\s*选项$/,
+    /^([a-j])选项$/,
+    /^option\s*([a-j])$/,
+    /^choice\s*([a-j])$/,
+    /^备选项?\s*([a-j])$/,
+    /^选项\s*([1-9])$/,
+  ]
+  for (const p of patterns) {
+    const m = h.match(p)
+    if (m) return m[1]
+  }
+  return null
+}
+
+function isStemHeader(header: string): boolean {
+  const h = header.trim().toLowerCase()
+  return /^题干$|^题目$|^试题$|^问题$|^stem$|^question$/i.test(h)
+    || (/题干|题目/.test(h) && !/题型|类型/.test(h))
+}
+
+function isTypeHeader(header: string): boolean {
+  const h = header.trim().toLowerCase()
+  return /^题型$|^类型$|^试题类型$|^type$/i.test(h)
+}
+
+function isAnswerHeader(header: string): boolean {
+  const h = header.trim().toLowerCase()
+  if (/正确率|准确率|得分率|正确次数/.test(h)) return false
+  return /^答案$|^正确答案$|^answer$/i.test(h)
+}
+
+function isExplanationHeader(header: string): boolean {
+  const h = header.trim().toLowerCase()
+  return /^解析$|^解释$|^explanation$|^点评$/i.test(h)
+    || (/解析|解释/.test(h) && !/答案/.test(h))
+}
+
+/** 按表头识别选项列（0-based），合并重复表头只保留首次出现 */
+function findOptionColumnIndices(headers: string[]): number[] {
+  const indices: number[] = []
+  const seenLabels = new Set<string>()
+  headers.forEach((h, i) => {
+    if (!isOptionHeader(h)) return
+    const label = getOptionLabel(h) ?? `__col_${i}`
+    if (seenLabels.has(label)) return
+    seenLabels.add(label)
+    indices.push(i)
+  })
+  return indices
+}
+
+const optionDetectHint = ref('')
+
 function autoDetectMapping() {
   if (!excelPreview.value?.headers) return
-  const headers: string[] = excelPreview.value.headers.map((h: string) => h.toLowerCase())
-  headers.forEach((h: string, i: number) => {
-    if (/题干|题目|stem|question/.test(h)) columnMapping.stem_col = i + 1
-    if (/题型|类型|type/.test(h)) columnMapping.type_col = i + 1
-    if (/^a$|选项a|option.?a/.test(h)) { columnMapping.option_start_col = i + 1 }
-    if (/答案|正确|answer/.test(h)) columnMapping.answer_col = i + 1
-    if (/解析|解释|explanation/.test(h)) columnMapping.explanation_col = i + 1
-  })
-  // 统计选项列数
-  let count = 0
-  const startIdx = columnMapping.option_start_col - 1
-  for (let i = startIdx; i < headers.length; i++) {
-    if (/^[a-d]$|选项[a-d]|option.?[a-d]/.test(headers[i])) count++
-    else break
+  const rawHeaders: string[] = excelPreview.value.headers
+  const headers = rawHeaders.map((h: string) => h.trim().toLowerCase())
+  const colCount = headers.length
+
+  const detected = {
+    stem_col: 1,
+    type_col: null as number | null,
+    answer_col: colCount > 0 ? colCount : 7,
+    explanation_col: null as number | null,
   }
-  if (count > 0) columnMapping.option_count = count
+
+  rawHeaders.forEach((h: string, i: number) => {
+    if (isStemHeader(h)) detected.stem_col = i + 1
+    if (isTypeHeader(h)) detected.type_col = i + 1
+    if (isAnswerHeader(h)) detected.answer_col = i + 1
+    if (isExplanationHeader(h)) detected.explanation_col = i + 1
+  })
+
+  columnMapping.stem_col = detected.stem_col
+  columnMapping.type_col = detected.type_col
+  columnMapping.answer_col = detected.answer_col
+  columnMapping.explanation_col = detected.explanation_col
+
+  const optionColIndices = findOptionColumnIndices(rawHeaders)
+  let detectSource = ''
+
+  if (optionColIndices.length > 0) {
+    columnMapping.option_cols = optionColIndices
+    columnMapping.option_start_col = optionColIndices[0] + 1
+    columnMapping.option_count = Math.min(optionColIndices.length, 10)
+    detectSource = '表头'
+    const colLabels = optionColIndices
+      .slice(0, columnMapping.option_count)
+      .map(i => i + 1)
+      .join('、')
+    optionDetectHint.value = `已自动识别选项列：第 ${colLabels} 列（共 ${columnMapping.option_count} 列，依据${detectSource}）`
+  } else {
+    columnMapping.option_cols = []
+    const leftBound = Math.max(detected.stem_col, detected.type_col ?? 0)
+    const rightCandidates = [
+      detected.answer_col,
+      detected.explanation_col,
+      colCount + 1,
+    ].filter((c): c is number => c != null && c > leftBound)
+    const rightBound = Math.min(...rightCandidates) - 1
+
+    if (rightBound > leftBound) {
+      const start0 = leftBound
+      const count = rightBound - leftBound
+      columnMapping.option_start_col = start0 + 1
+      columnMapping.option_count = Math.min(count, 10)
+      columnMapping.option_cols = Array.from(
+        { length: columnMapping.option_count },
+        (_, i) => start0 + i,
+      )
+      detectSource = '列区间'
+      const endCol = start0 + columnMapping.option_count
+      optionDetectHint.value = `已自动识别选项列：第 ${start0 + 1}–${endCol} 列（共 ${columnMapping.option_count} 列，依据${detectSource}）`
+    } else {
+      optionDetectHint.value = '未能自动识别选项列，请手动设置选项起始列和列数'
+    }
+  }
 }
 
 async function doImport() {
+  const answerCol0 = columnMapping.answer_col - 1
+  const optionCols0 = columnMapping.option_cols.length > 0
+    ? columnMapping.option_cols.slice(0, columnMapping.option_count)
+    : Array.from(
+        { length: columnMapping.option_count },
+        (_, i) => columnMapping.option_start_col - 1 + i,
+      )
+
+  if (optionCols0.some(col => col === answerCol0)) {
+    message.error('列映射有误：选项列与答案列重叠，请检查自动识别结果或手动调整')
+    return
+  }
+  if (optionCols0.some(col => col === columnMapping.stem_col - 1)) {
+    message.error('列映射有误：选项列与题干列重叠，请检查自动识别结果或手动调整')
+    return
+  }
+
   try {
     const forceType: string | null = uniformTypeEnabled.value ? uniformTypeValue.value : null
     const strategy: string = duplicateStrategy.value
@@ -294,7 +408,8 @@ async function doImport() {
       typeCol: columnMapping.type_col != null ? columnMapping.type_col - 1 : null,
       optionStartCol: columnMapping.option_start_col - 1,
       optionCount: columnMapping.option_count,
-      answerCol: columnMapping.answer_col - 1,
+      optionCols: optionCols0,
+      answerCol: answerCol0,
       explanationCol: columnMapping.explanation_col != null ? columnMapping.explanation_col - 1 : null,
       forceType,
       duplicateStrategy: strategy,
@@ -643,6 +758,10 @@ const columns = [
             <a-input-number v-model:value="columnMapping.explanation_col" :min="1" style="width: 70px" />
           </a-form-item>
         </a-form>
+        <div v-if="optionDetectHint" style="margin: -8px 0 16px; color: #1890ff; font-size: 12px">
+          {{ optionDetectHint }}
+          <a-button type="link" size="small" style="padding: 0 4px" @click="autoDetectMapping">重新识别</a-button>
+        </div>
 
         <!-- 统一设置题型 -->
         <div style="margin-bottom: 16px; padding: 12px; background: #fafafa; border-radius: 6px">

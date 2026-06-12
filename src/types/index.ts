@@ -71,6 +71,50 @@ export interface PracticeMemoryItem {
   timestamp: string
 }
 
+/** 题库预览（数据库概览 / 导入预览） */
+export interface SourceBankPreview {
+  name: string
+  question_count: number
+  created_at: string
+  name_conflict: boolean
+}
+
+/** 当前数据库信息 */
+export interface DatabaseInfo {
+  path: string
+  size_bytes: number
+  bank_count: number
+  question_count: number
+  record_count: number
+  banks: SourceBankPreview[]
+}
+
+/** 外部数据库预览 */
+export interface SourceDatabasePreview {
+  file_path: string
+  size_bytes: number
+  bank_count: number
+  question_count: number
+  record_count: number
+  banks: SourceBankPreview[]
+}
+
+/** 数据库替换导入结果 */
+export interface ImportReplaceResult {
+  backup_path: string
+}
+
+/** 数据库合并结果 */
+export interface MergeResult {
+  banks_added: number
+  banks_merged: number
+  banks_skipped: number
+  questions_added: number
+  questions_skipped: number
+  questions_overwritten: number
+  errors: string[]
+}
+
 /** Excel 列映射配置 */
 export interface ColumnMapping {
   stem_col: number       // 题干列索引 (0-based)

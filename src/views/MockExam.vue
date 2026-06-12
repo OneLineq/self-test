@@ -88,11 +88,15 @@ const examSubmitted = ref(false)
 const examScore = ref({ correct: 0, total: 0, percentage: 0 })
 let timerInterval: number | null = null
 
+/** 未设置题型的题目归入此分类 */
+const UNTYPED = '__untagged__'
+
 const typeLabels: Record<string, string> = {
   single: '单选题',
   multiple: '多选题',
   judge: '判断题',
   fill: '填空题',
+  [UNTYPED]: '未分类',
 }
 
 const typeColors: Record<string, string> = {
@@ -100,6 +104,7 @@ const typeColors: Record<string, string> = {
   multiple: 'purple',
   judge: 'orange',
   fill: 'green',
+  [UNTYPED]: 'default',
 }
 
 onMounted(async () => {
@@ -115,9 +120,8 @@ onMounted(async () => {
     // 提取题型并按题型统计数量
     const counts: Record<string, number> = {}
     for (const q of allQuestions.value) {
-      if (q.type) {
-        counts[q.type] = (counts[q.type] || 0) + 1
-      }
+      const t = q.type?.trim() ? q.type.trim() : UNTYPED
+      counts[t] = (counts[t] || 0) + 1
     }
     availableTypes.value = Object.keys(counts).sort()
     typeTotalCounts.value = { ...counts }
@@ -188,25 +192,35 @@ const timePerQuestion = computed(() => {
 // ===== 开始考试 =====
 
 async function startExam() {
+  if (totalSelectedCount.value === 0 && allQuestions.value.length === 0) {
+    message.warning('题库暂无题目')
+    return
+  }
+
   settingStep.value = 'exam'
   examSubmitted.value = false
 
-  // 筛选出抽取数量 > 0 的题型
+  // 筛选出抽取数量 > 0 的题型（未分类题型传空字符串给后端）
   const ptl: Record<string, number> = {}
   for (const [type, count] of Object.entries(perTypeLimits.value)) {
-    if (count > 0) ptl[type] = count
+    if (count > 0) {
+      ptl[type === UNTYPED ? '' : type] = count
+    }
   }
 
-  // 如果有题型没启用（count === 0），只传启用的题型
-  const activeTypes = Object.keys(ptl)
+  if (Object.keys(ptl).length > 0) {
+    await store.loadQuestions(bankId, 'exam', undefined, undefined, ptl)
+  } else {
+    // 兜底：全部题目参与考试
+    await store.loadQuestions(bankId, 'exam')
+  }
 
-  await store.loadQuestions(
-    bankId,
-    'exam',
-    activeTypes.length > 0 ? activeTypes : undefined,
-    undefined,
-    ptl,
-  )
+  if (store.totalCount === 0) {
+    settingStep.value = 'settings'
+    message.warning('未能抽取到题目，请检查题型设置或确认题目已设置题型')
+    return
+  }
+
   regenerateAllShuffles()
   remainingSeconds.value = examMinutes.value * 60
   startTimer()
@@ -530,8 +544,14 @@ function handleKeydown(e: KeyboardEvent) {
 
       <a-divider />
 
+      <div v-if="store.totalCount === 0" style="text-align: center; padding: 80px">
+        <a-empty description="暂无题目，请返回调整考试设置">
+          <a-button type="primary" @click="settingStep = 'settings'">返回设置</a-button>
+        </a-empty>
+      </div>
+
       <!-- 题目列表 -->
-      <div class="question-list">
+      <div v-else class="question-list">
         <div
           v-for="(q, qIdx) in store.questions"
           :key="q.id"
@@ -616,7 +636,7 @@ function handleKeydown(e: KeyboardEvent) {
             <a-tag v-if="q.type" :color="typeColors[q.type]" size="small">
               {{ typeLabels[q.type] || q.type }}
             </a-tag>
-            <span style="flex: 1; margin-left: 6px">{{ q.stem }}</span>
+            <span class="review-stem">{{ q.stem }}</span>
             <span v-if="isUnanswered(q)" class="review-status review-status-unanswered">未作答</span>
             <span v-else-if="store.isAnswerCorrect(q.id)" class="review-status review-status-correct">
               <CheckCircleOutlined /> 正确
@@ -694,6 +714,7 @@ function handleKeydown(e: KeyboardEvent) {
   font-size: 15px;
   line-height: 1.6;
   margin-bottom: 8px;
+  white-space: pre-line;
 }
 
 .q-number {
@@ -912,6 +933,12 @@ function handleKeydown(e: KeyboardEvent) {
   line-height: 1.6;
 }
 
+.review-stem {
+  flex: 1;
+  margin-left: 6px;
+  white-space: pre-line;
+}
+
 .review-explanation {
   margin-top: 8px;
   padding: 8px 12px;
@@ -919,5 +946,6 @@ function handleKeydown(e: KeyboardEvent) {
   border-radius: 6px;
   font-size: 13px;
   line-height: 1.6;
+  white-space: pre-line;
 }
 </style>

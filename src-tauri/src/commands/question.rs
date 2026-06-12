@@ -117,7 +117,7 @@ pub fn list_questions(
     state: tauri::State<DbState>,
     bank_id: String,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
             "SELECT q.id, q.bank_id, q.stem, q.type, q.options, q.answer,
@@ -165,7 +165,7 @@ pub fn add_question(
     answer: serde_json::Value,
     explanation: String,
 ) -> Result<Question, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let id = Uuid::new_v4().to_string();
     let options_json = serde_json::to_string(&options).map_err(|e| e.to_string())?;
     let answer_json = serde_json::to_string(&answer).map_err(|e| e.to_string())?;
@@ -201,7 +201,7 @@ pub fn update_question(
     answer: serde_json::Value,
     explanation: String,
 ) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let options_json = serde_json::to_string(&options).map_err(|e| e.to_string())?;
     let answer_json = serde_json::to_string(&answer).map_err(|e| e.to_string())?;
 
@@ -215,14 +215,14 @@ pub fn update_question(
 
 #[tauri::command]
 pub fn delete_question(state: tauri::State<DbState>, id: String) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM questions WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "DELETE FROM practice_records WHERE question_id = ?1",
         rusqlite::params![id],
     )
     .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM questions WHERE id = ?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -238,12 +238,13 @@ pub fn import_questions(
     type_col: Option<usize>,
     option_start_col: usize,
     option_count: usize,
+    option_cols: Option<Vec<usize>>,
     answer_col: usize,
     explanation_col: Option<usize>,
     force_type: Option<String>,
     duplicate_strategy: Option<String>,
 ) -> Result<ImportResult, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     // 根据扩展名自动选择 Xls/Xlsx 读取器
     let range = open_spreadsheet!(&file_path, workbook, {
@@ -298,18 +299,49 @@ pub fn import_questions(
             }
         };
 
-        // 读取选项
+        // 读取选项（优先使用表头识别的精确列索引，跳过合并单元格产生的重复列值）
+        let cols_to_read: Vec<usize> = option_cols
+            .as_ref()
+            .filter(|cols| !cols.is_empty())
+            .cloned()
+            .unwrap_or_else(|| (0..option_count).map(|i| option_start_col + i).collect());
+
         let mut options: Vec<String> = Vec::new();
-        for i in 0..option_count {
-            let col = option_start_col + i;
+        let mut prev_col: Option<usize> = None;
+        let mut prev_opt: Option<String> = None;
+        for &col in &cols_to_read {
+            if col == stem_col || col == answer_col {
+                continue;
+            }
+            if let Some(type_col) = type_col {
+                if col == type_col {
+                    continue;
+                }
+            }
+            if let Some(explanation_col) = explanation_col {
+                if col == explanation_col {
+                    continue;
+                }
+            }
+
             let opt = row
                 .get(col)
                 .map(|c| c.to_string().trim().to_string())
                 .unwrap_or_default();
-            if !opt.is_empty() {
-                let letter = ((b'A' + i as u8) as char).to_string();
-                options.push(format!("{}. {}", letter, opt));
+            if opt.is_empty() {
+                continue;
             }
+            // 合并单元格会在物理相邻列重复相同内容，仅跳过相邻重复值
+            if let (Some(pc), Some(po)) = (prev_col, prev_opt.as_ref()) {
+                if col == pc + 1 && po == &opt {
+                    prev_col = Some(col);
+                    continue;
+                }
+            }
+            prev_col = Some(col);
+            prev_opt = Some(opt.clone());
+            let letter = ((b'A' + options.len() as u8) as char).to_string();
+            options.push(format!("{}. {}", letter, opt));
         }
 
         // 读取答案
@@ -417,7 +449,7 @@ pub fn export_questions(
     bank_id: String,
     save_path: String,
 ) -> Result<String, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -583,7 +615,7 @@ pub fn check_duplicate_stems(
     sheet_name: String,
     stem_col: usize,
 ) -> Result<DuplicateCheckResult, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     // 读取 Excel
     let range = open_spreadsheet!(&file_path, workbook, {
@@ -646,7 +678,7 @@ pub fn batch_set_type(
     question_ids: Vec<String>,
     q_type: String,
 ) -> Result<u32, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut count = 0u32;
     for id in &question_ids {
         match conn.execute(
@@ -666,17 +698,16 @@ pub fn batch_delete_questions(
     state: tauri::State<DbState>,
     question_ids: Vec<String>,
 ) -> Result<u32, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut count = 0u32;
     for id in &question_ids {
+        conn.execute(
+            "DELETE FROM practice_records WHERE question_id=?1",
+            rusqlite::params![id],
+        )
+        .map_err(|e| format!("清理题目 {} 的练习记录失败: {}", id, e))?;
         match conn.execute("DELETE FROM questions WHERE id=?1", rusqlite::params![id]) {
-            Ok(n) => {
-                count += n as u32;
-                let _ = conn.execute(
-                    "DELETE FROM practice_records WHERE question_id=?1",
-                    rusqlite::params![id],
-                );
-            }
+            Ok(n) => count += n as u32,
             Err(e) => return Err(format!("删除题目 {} 失败: {}", id, e)),
         }
     }
@@ -689,7 +720,7 @@ pub fn clear_bank_questions(
     state: tauri::State<DbState>,
     bank_id: String,
 ) -> Result<u32, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     // 先清理练习记录（否则外键约束会阻止删除题目）
     let _ = conn.execute(
         "DELETE FROM practice_records WHERE bank_id=?1",

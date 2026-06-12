@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 #[tauri::command]
 pub fn create_bank(state: tauri::State<DbState>, name: String) -> Result<Bank, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let id = Uuid::new_v4().to_string();
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -29,7 +29,7 @@ pub fn create_bank(state: tauri::State<DbState>, name: String) -> Result<Bank, S
 
 #[tauri::command]
 pub fn list_banks(state: tauri::State<DbState>) -> Result<Vec<Bank>, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
             "SELECT b.id, b.name, b.created_at, COUNT(q.id) as q_count
@@ -56,7 +56,7 @@ pub fn list_banks(state: tauri::State<DbState>) -> Result<Vec<Bank>, String> {
 
 #[tauri::command]
 pub fn get_bank(state: tauri::State<DbState>, id: String) -> Result<Option<Bank>, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
             "SELECT b.id, b.name, b.created_at, COUNT(q.id) as q_count
@@ -82,22 +82,22 @@ pub fn get_bank(state: tauri::State<DbState>, id: String) -> Result<Option<Bank>
 
 #[tauri::command]
 pub fn delete_bank(state: tauri::State<DbState>, id: String) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM questions WHERE bank_id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM banks WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "DELETE FROM practice_records WHERE bank_id = ?1",
         rusqlite::params![id],
     )
     .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM questions WHERE bank_id = ?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM banks WHERE id = ?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn rename_bank(state: tauri::State<DbState>, id: String, name: String) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "UPDATE banks SET name = ?1 WHERE id = ?2",
         rusqlite::params![name, id],

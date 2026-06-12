@@ -677,6 +677,7 @@ function navDotStyle(idx: number): Record<string, string> {
       <!-- 解析 -->
       <a-alert
         v-if="question.explanation && store.showResult.get(question.id)"
+        class="explanation-alert"
         message="解析"
         :description="question.explanation"
         type="info"
@@ -798,6 +799,11 @@ function navDotStyle(idx: number): Record<string, string> {
   background: #fafafa;
   border-radius: 8px;
   border-left: 4px solid #1890ff;
+  white-space: pre-line;
+}
+
+.explanation-alert :deep(.ant-alert-description) {
+  white-space: pre-line;
 }
 
 .q-number {

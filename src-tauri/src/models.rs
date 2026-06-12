@@ -52,6 +52,50 @@ pub struct DuplicateCheckResult {
     pub duplicate_stems: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceBankPreview {
+    pub name: String,
+    pub question_count: u32,
+    pub created_at: String,
+    pub name_conflict: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatabaseInfo {
+    pub path: String,
+    pub size_bytes: u64,
+    pub bank_count: u32,
+    pub question_count: u32,
+    pub record_count: u32,
+    pub banks: Vec<SourceBankPreview>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceDatabasePreview {
+    pub file_path: String,
+    pub size_bytes: u64,
+    pub bank_count: u32,
+    pub question_count: u32,
+    pub record_count: u32,
+    pub banks: Vec<SourceBankPreview>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportReplaceResult {
+    pub backup_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeResult {
+    pub banks_added: u32,
+    pub banks_merged: u32,
+    pub banks_skipped: u32,
+    pub questions_added: u32,
+    pub questions_skipped: u32,
+    pub questions_overwritten: u32,
+    pub errors: Vec<String>,
+}
+
 /// 自定义反序列化：支持字符串和数组两种格式
 fn deserialize_answer<'de, D>(deserializer: D) -> Result<serde_json::Value, D::Error>
 where

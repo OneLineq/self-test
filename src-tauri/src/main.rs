@@ -32,8 +32,11 @@ fn main() {
                 .path_resolver()
                 .app_data_dir()
                 .expect("Failed to resolve app data dir");
-            let conn = db::init_db(&app_dir);
-            app.manage(DbState(Mutex::new(conn)));
+            let (conn, db_path) = db::init_db(&app_dir);
+            app.manage(DbState {
+                conn: Mutex::new(conn),
+                db_path,
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -43,6 +46,12 @@ fn main() {
             commands::bank::get_bank,
             commands::bank::delete_bank,
             commands::bank::rename_bank,
+            // Database commands
+            commands::database::get_database_info,
+            commands::database::preview_source_database,
+            commands::database::export_database,
+            commands::database::import_database,
+            commands::database::merge_database,
             // Question commands
             commands::question::list_questions,
             commands::question::add_question,

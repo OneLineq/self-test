@@ -16,6 +16,7 @@ import {
   QuestionCircleOutlined,
   ExclamationCircleOutlined,
   ClockCircleOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons-vue'
 import type { MenuProps } from 'ant-design-vue'
 import { usePracticeStore } from './stores/practice'
@@ -27,6 +28,7 @@ const collapsed = ref(false)
 const menuItems: MenuProps['items'] = [
   { key: '/', icon: () => h(DashboardOutlined), label: '数据看板' },
   { key: '/banks', icon: () => h(FolderOutlined), label: '题库管理' },
+  { key: '/data', icon: () => h(DatabaseOutlined), label: '数据管理' },
   {
     key: 'practice-group',
     label: '练习模式',
