@@ -130,7 +130,7 @@ pub fn list_questions(
         )
         .map_err(|e| e.to_string())?;
 
-    let questions = stmt
+    let questions: Vec<serde_json::Value> = stmt
         .query_map(rusqlite::params![bank_id], |row| {
             let options_str: String = row.get(4)?;
             let answer_str: String = row.get(5)?;

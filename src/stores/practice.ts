@@ -5,6 +5,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/tauri'
 import type { Question, PracticeMode } from '../types'
+import { normalizeQuestion } from '../types'
 
 export const usePracticeStore = defineStore('practice', () => {
   const questions = ref<Question[]>([])
@@ -54,16 +55,28 @@ export const usePracticeStore = defineStore('practice', () => {
     userAnswers.value = new Map()
     showResult.value = new Map()
     try {
-      questions.value = await invoke<Question[]>('get_practice_questions', {
+      const raw = await invoke<Question[]>('get_practice_questions', {
         bankId,
         mode: practiceMode,
         questionTypes: questionTypes && questionTypes.length > 0 ? questionTypes : null,
         limit: limit ?? null,
         perTypeLimits: perTypeLimits && Object.keys(perTypeLimits).length > 0 ? perTypeLimits : null,
       })
+      questions.value = raw.map(q => normalizeQuestion(q))
     } finally {
       loading.value = false
     }
+  }
+
+  /** 随机打乱题目顺序（模拟考试不定项模式用） */
+  function shuffleQuestionOrder() {
+    const arr = [...questions.value]
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]]
+    }
+    questions.value = arr
+    currentIndex.value = 0
   }
 
   /** 提交答案 */
@@ -177,6 +190,7 @@ export const usePracticeStore = defineStore('practice', () => {
     answeredCount,
     correctCount,
     loadQuestions,
+    shuffleQuestionOrder,
     submitAnswer,
     submitExamAnswers,
     next,

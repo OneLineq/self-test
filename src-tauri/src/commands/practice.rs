@@ -69,7 +69,12 @@ pub fn get_practice_questions(
     // ===== 原有逻辑（无 per_type_limits 时） =====
     // 构建 WHERE + ORDER BY 子句
     let (order_clause, filter_suffix) = match mode.as_str() {
-        "wrong" => ("ORDER BY q.times_attempted ASC, RANDOM()", " AND pr.is_correct = 0"),
+        "wrong" => (
+            "ORDER BY q.times_attempted ASC, \
+             CASE WHEN q.times_attempted > 0 THEN 1.0 * q.times_correct / q.times_attempted ELSE 0 END ASC, \
+             q.rowid ASC",
+            " AND pr.is_correct = 0",
+        ),
         "random" => ("ORDER BY RANDOM()", ""),
         _ => ("ORDER BY rowid", ""), // sequential / exam
     };

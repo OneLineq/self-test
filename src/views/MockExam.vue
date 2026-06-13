@@ -15,7 +15,7 @@ import {
 } from '@ant-design/icons-vue'
 import { usePracticeStore } from '../stores/practice'
 import { invoke } from '@tauri-apps/api/tauri'
-import { isChoiceType } from '../types'
+import { isChoiceType, normalizeQuestion } from '../types'
 import type { Question } from '../types'
 
 const route = useRoute()
@@ -110,17 +110,13 @@ const typeColors: Record<string, string> = {
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   try {
-    // 先拉取全部试题，用于展示统计
-    allQuestions.value = await invoke<Question[]>('get_practice_questions', {
-      bankId,
-      mode: 'sequential',
-      questionTypes: null,
-      limit: null,
-    })
-    // 提取题型并按题型统计数量
+    // 与试题管理使用同一接口，确保题型字段一致
+    const rawQuestions = await invoke<Question[]>('list_questions', { bankId })
+    allQuestions.value = rawQuestions.map(normalizeQuestion)
+    // 提取题型并按题型统计数量（normalize 后直接使用 type）
     const counts: Record<string, number> = {}
     for (const q of allQuestions.value) {
-      const t = q.type?.trim() ? q.type.trim() : UNTYPED
+      const t = q.type || UNTYPED
       counts[t] = (counts[t] || 0) + 1
     }
     availableTypes.value = Object.keys(counts).sort()
@@ -189,6 +185,9 @@ const timePerQuestion = computed(() => {
   return Math.round((examMinutes.value * 60) / count)
 })
 
+/** 滑块上限随手动输入扩展，避免超出 120 分钟后滑块顶死 */
+const examMinutesSliderMax = computed(() => Math.max(120, examMinutes.value))
+
 // ===== 开始考试 =====
 
 async function startExam() {
@@ -219,6 +218,11 @@ async function startExam() {
     settingStep.value = 'settings'
     message.warning('未能抽取到题目，请检查题型设置或确认题目已设置题型')
     return
+  }
+
+  // 不定项模式：打乱题目顺序，避免单选/多选按题型块状排列
+  if (indeterminateMode.value) {
+    store.shuffleQuestionOrder()
   }
 
   regenerateAllShuffles()
@@ -474,22 +478,22 @@ function handleKeydown(e: KeyboardEvent) {
 
           <!-- 考试时间 -->
           <a-form-item label="考试时间">
-            <a-row :gutter="16">
-              <a-col :span="18">
-                <a-slider
-                  v-model:value="examMinutes"
-                  :min="5"
-                  :max="120"
-                  :marks="{ 5: '5分', 30: '30分', 60: '1小时', 120: '2小时' }"
-                />
-              </a-col>
-              <a-col :span="6" style="text-align: right">
-                <span style="font-size: 18px; font-weight: bold; color: #1890ff">
-                  {{ examMinutes }}
-                </span>
-                <span style="color: #999"> 分钟</span>
-              </a-col>
-            </a-row>
+            <div style="display: flex; align-items: center; gap: 12px">
+              <a-slider
+                v-model:value="examMinutes"
+                :min="5"
+                :max="examMinutesSliderMax"
+                :marks="{ 5: '5分', 30: '30分', 60: '1小时', 120: '2小时' }"
+                style="flex: 1; margin: 0"
+              />
+              <a-input-number
+                v-model:value="examMinutes"
+                :min="5"
+                :max="480"
+                style="width: 72px"
+              />
+              <span style="color: #999; font-size: 12px; white-space: nowrap">分钟</span>
+            </div>
             <div style="margin-top: 8px; color: #999; font-size: 12px">
               <clock-circle-outlined />
               {{ timeDisplay }}，平均每题 {{ timePerQuestion }} 秒

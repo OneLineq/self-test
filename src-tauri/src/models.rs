@@ -16,6 +16,7 @@ pub struct Question {
     pub id: String,
     pub bank_id: String,
     pub stem: String,
+    #[serde(rename = "type")]
     pub r#type: String,
     pub options: Vec<String>,
     #[serde(deserialize_with = "deserialize_answer")]

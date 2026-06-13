@@ -3,7 +3,6 @@
 
 mod commands;
 mod db;
-mod debug_log;
 mod models;
 
 use tauri::Manager;
