@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // 刷题助手 — 题目管理 Commands（含 Excel 导入导出）
 // ============================================================
 use crate::db::DbState;
@@ -117,7 +117,7 @@ pub fn list_questions(
     state: tauri::State<DbState>,
     bank_id: String,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
             "SELECT q.id, q.bank_id, q.stem, q.type, q.options, q.answer,
@@ -165,7 +165,7 @@ pub fn add_question(
     answer: serde_json::Value,
     explanation: String,
 ) -> Result<Question, String> {
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn.lock().map_err(|e| e.to_string())?;
     let id = Uuid::new_v4().to_string();
     let options_json = serde_json::to_string(&options).map_err(|e| e.to_string())?;
     let answer_json = serde_json::to_string(&answer).map_err(|e| e.to_string())?;
@@ -201,7 +201,7 @@ pub fn update_question(
     answer: serde_json::Value,
     explanation: String,
 ) -> Result<(), String> {
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn.lock().map_err(|e| e.to_string())?;
     let options_json = serde_json::to_string(&options).map_err(|e| e.to_string())?;
     let answer_json = serde_json::to_string(&answer).map_err(|e| e.to_string())?;
 
@@ -215,7 +215,7 @@ pub fn update_question(
 
 #[tauri::command]
 pub fn delete_question(state: tauri::State<DbState>, id: String) -> Result<(), String> {
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "DELETE FROM practice_records WHERE question_id = ?1",
         rusqlite::params![id],
@@ -224,6 +224,18 @@ pub fn delete_question(state: tauri::State<DbState>, id: String) -> Result<(), S
     conn.execute("DELETE FROM questions WHERE id = ?1", rusqlite::params![id])
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// 将用户输入的题型字符串标准化为内部类型值
+fn normalize_question_type(raw: &str) -> &str {
+    let s = raw.trim().to_lowercase();
+    match s.as_str() {
+        "single" | "单选题" | "单选" | "单项选择" | "选择题" | "单项" | "单选題" => "single",
+        "multiple" | "多选题" | "多选" | "多项选择" | "多項選擇" | "多項" | "多选題" => "multiple",
+        "judge" | "判断题" | "判断" | "是非题" | "是非" | "对错题" | "对错" | "判断題" => "judge",
+        "fill" | "填空题" | "填空" | "简答题" | "简答" | "问答题" | "问答" | "主观题" | "fill-in" => "fill",
+        _ => raw.trim(),
+    }
 }
 
 /// 导入 Excel 题目（智能列映射）
@@ -244,19 +256,22 @@ pub fn import_questions(
     force_type: Option<String>,
     duplicate_strategy: Option<String>,
 ) -> Result<ImportResult, String> {
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn.lock().map_err(|e| e.to_string())?;
 
-    // 根据扩展名自动选择 Xls/Xlsx 读取器
+    // 读取 Excel 到内存
     let range = open_spreadsheet!(&file_path, workbook, {
         workbook
             .worksheet_range(&sheet_name)
             .map_err(|e| format!("读取工作表 '{}' 失败: {}", sheet_name, e))
     })?;
 
-    let rows = range.rows();
+    let rows: Vec<Vec<calamine::Data>> = range.rows().map(|r| r.to_vec()).collect();
     if rows.len() < 2 {
         return Err("文件至少需要标题行和一行数据".into());
     }
+
+    let strategy = duplicate_strategy.as_deref().unwrap_or("append");
+    let force_type = force_type.filter(|ft| !ft.is_empty());
 
     let mut success = 0u32;
     let mut failed = 0u32;
@@ -264,89 +279,170 @@ pub fn import_questions(
     let mut overwritten = 0u32;
     let mut errors: Vec<String> = Vec::new();
 
-    // 跳过标题行（第一行）
-    for (row_idx, row) in rows.enumerate().skip(1) {
+    // ===== 预先确定要读取的选项列索引（只计算一次，避免循环内重复计算） =====
+    let cols_to_read: Vec<usize> = option_cols
+        .as_ref()
+        .filter(|cols| !cols.is_empty())
+        .cloned()
+        .unwrap_or_else(|| (0..option_count).map(|i| option_start_col + i).collect());
+
+    // ===== 预编译 SQL 语句 =====
+    let mut update_stmt = conn
+        .prepare("UPDATE questions SET type=?1, options=?2, answer=?3, explanation=?4 WHERE id=?5")
+        .map_err(|e| e.to_string())?;
+
+    // ===== Phase 1: 构建去重映射（overwrite/skip 策略） =====
+    // 一次性查出所有已有题目的 stem→id 映射
+    let stem_id_map: std::collections::HashMap<String, String> = if strategy == "overwrite" || strategy == "skip" {
+        let mut stmt = conn
+            .prepare("SELECT stem, id FROM questions WHERE bank_id=?1")
+            .map_err(|e| e.to_string())?;
+        let map: std::collections::HashMap<String, String> = stmt
+            .query_map(rusqlite::params![bank_id], |row| {
+                let stem: String = row.get(0)?;
+                let id: String = row.get(1)?;
+                Ok((stem, id))
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        map
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    // ===== Phase 2: 批量处理所有行（内存中完成所有数据准备） =====
+    // 将 UPDATE 操作放在一个块中，确保 update_stmt 在事务开始前被销毁
+    struct ProcessedRow {
+        stem: String,
+        q_type: String,
+        options_json: String,
+        answer_json: String,
+        explanation: String,
+    }
+
+    let mut insert_rows: Vec<ProcessedRow> = Vec::with_capacity(rows.len());
+
+    for (row_idx, row) in rows.iter().enumerate().skip(1) {
         if row.is_empty() {
             continue;
         }
 
-        // 读取题干
+        // 读取题干（统一错误处理）
         let stem = match row.get(stem_col) {
-            Some(cell) => cell.to_string().trim().to_string(),
+            Some(cell) => {
+                let s = cell.to_string();
+                let s = s.trim();
+                if s.is_empty() {
+                    failed += 1;
+                    errors.push(format!("第 {} 行：题干为空", row_idx + 1));
+                    continue;
+                }
+                s.to_string()
+            }
             None => {
                 failed += 1;
                 errors.push(format!("第 {} 行：题干列为空", row_idx + 1));
                 continue;
             }
         };
-        if stem.is_empty() {
-            failed += 1;
-            errors.push(format!("第 {} 行：题干为空", row_idx + 1));
+
+        // 去重策略处理（哈希表查，O(1)）
+        let is_duplicate = if strategy == "overwrite" || strategy == "skip" {
+            stem_id_map.contains_key(&stem)
+        } else {
+            false
+        };
+
+        if is_duplicate && strategy == "skip" {
+            skipped += 1;
             continue;
         }
 
-        // 读取题型（如果指定了统一题型则覆盖）
+        // 读取题型
         let q_type = if let Some(ref ft) = force_type {
-            if !ft.is_empty() {
-                ft.clone()
-            } else {
-                String::new()
-            }
+            ft.clone()
         } else {
-            match type_col {
-                Some(col) => row.get(col).map(|c| c.to_string().trim().to_string()).unwrap_or_default(),
-                None => String::new(),
-            }
+            type_col
+                .and_then(|col| row.get(col))
+                .map(|c| {
+                    let raw = c.to_string().trim().to_string();
+                    normalize_question_type(&raw).to_string()
+                })
+                .unwrap_or_default()
         };
 
-        // 读取选项（优先使用表头识别的精确列索引，跳过合并单元格产生的重复列值）
-        let cols_to_read: Vec<usize> = option_cols
-            .as_ref()
-            .filter(|cols| !cols.is_empty())
-            .cloned()
-            .unwrap_or_else(|| (0..option_count).map(|i| option_start_col + i).collect());
-
-        let mut options: Vec<String> = Vec::new();
+        // 读取选项——直接构建 JSON 字符串，避免中间 Vec<String> 和 serde_json 序列化
+        let mut options_json = String::from('[');
+        let mut opt_count = 0u8;
         let mut prev_col: Option<usize> = None;
-        let mut prev_opt: Option<String> = None;
+        let mut prev_opt: String = String::new();
+
         for &col in &cols_to_read {
             if col == stem_col || col == answer_col {
                 continue;
             }
-            if let Some(type_col) = type_col {
-                if col == type_col {
-                    continue;
-                }
-            }
-            if let Some(explanation_col) = explanation_col {
-                if col == explanation_col {
-                    continue;
-                }
-            }
+            if let Some(type_col) = type_col { if col == type_col { continue; } }
+            if let Some(explanation_col) = explanation_col { if col == explanation_col { continue; } }
 
-            let opt = row
-                .get(col)
-                .map(|c| c.to_string().trim().to_string())
-                .unwrap_or_default();
-            if opt.is_empty() {
-                continue;
-            }
-            // 合并单元格会在物理相邻列重复相同内容，仅跳过相邻重复值
-            if let (Some(pc), Some(po)) = (prev_col, prev_opt.as_ref()) {
-                if col == pc + 1 && po == &opt {
+            let opt = match row.get(col) {
+                Some(c) => {
+                    let s = c.to_string();
+                    let s = s.trim();
+                    if s.is_empty() { continue; }
+                    s.to_string()
+                }
+                None => continue,
+            };
+
+            // 跳过相邻重复（合并单元格）
+            if let Some(pc) = prev_col {
+                if col == pc + 1 && prev_opt == opt {
                     prev_col = Some(col);
                     continue;
                 }
             }
             prev_col = Some(col);
-            prev_opt = Some(opt.clone());
-            let letter = ((b'A' + options.len() as u8) as char).to_string();
-            options.push(format!("{}. {}", letter, opt));
-        }
+            prev_opt = opt.clone();
 
-        // 读取答案
+            let letter = (b'A' + opt_count) as char;
+            opt_count += 1;
+
+            if opt_count > 1 {
+                options_json.push(',');
+            }
+            // JSON escape: "A. content"
+            options_json.push('"');
+            options_json.push(letter);
+            options_json.push('.');
+            options_json.push(' ');
+            // Escape special chars in option text
+            for ch in opt.chars() {
+                match ch {
+                    '"' => options_json.push_str("\\\""),
+                    '\\' => options_json.push_str("\\\\"),
+                    '\n' => options_json.push_str("\\n"),
+                    '\r' => options_json.push_str("\\r"),
+                    '\t' => options_json.push_str("\\t"),
+                    c => options_json.push(c),
+                }
+            }
+            options_json.push('"');
+        }
+        options_json.push(']');
+
+        // 读取答案——直接构建 JSON 字符串
         let answer_raw = match row.get(answer_col) {
-            Some(cell) => cell.to_string().trim().to_string(),
+            Some(cell) => {
+                let s = cell.to_string();
+                let s = s.trim();
+                if s.is_empty() {
+                    failed += 1;
+                    errors.push(format!("第 {} 行：答案列为空", row_idx + 1));
+                    continue;
+                }
+                s.to_string()
+            }
             None => {
                 failed += 1;
                 errors.push(format!("第 {} 行：答案列为空", row_idx + 1));
@@ -354,22 +450,38 @@ pub fn import_questions(
             }
         };
 
-        let answer: serde_json::Value = {
+        let answer_json = {
             let upper = answer_raw.to_uppercase();
-            // 判断是否为多选（如 "ABC" 或 "A,B,C"）
-            let cleaned = upper.replace(',', "").replace('，', "").replace(' ', "");
-            if cleaned.len() > 1
-                && cleaned.chars().all(|c| c.is_ascii_uppercase())
-            {
-                let arr: Vec<serde_json::Value> = cleaned
-                    .chars()
-                    .map(|c| serde_json::Value::String(c.to_string()))
-                    .collect();
-                serde_json::Value::Array(arr)
+            let cleaned: String = upper.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+            if cleaned.len() > 1 && cleaned.chars().all(|c| c.is_ascii_uppercase()) {
+                // 多选题：["A","B","C"]
+                let mut json = String::from('[');
+                for (i, c) in cleaned.chars().enumerate() {
+                    if i > 0 { json.push(','); }
+                    json.push('"');
+                    json.push(c);
+                    json.push('"');
+                }
+                json.push(']');
+                json
             } else if cleaned.len() == 1 && cleaned.chars().all(|c| c.is_ascii_uppercase()) {
-                serde_json::Value::String(cleaned)
+                // 单选题："A"
+                format!("\"{}\"", cleaned)
             } else {
-                serde_json::Value::String(answer_raw.to_string())
+                // 其他类型（如填空/判断）：原样输出
+                let mut json = String::from('"');
+                for ch in answer_raw.chars() {
+                    match ch {
+                        '"' => json.push_str("\\\""),
+                        '\\' => json.push_str("\\\\"),
+                        '\n' => json.push_str("\\n"),
+                        '\r' => json.push_str("\\r"),
+                        '\t' => json.push_str("\\t"),
+                        c => json.push(c),
+                    }
+                }
+                json.push('"');
+                json
             }
         };
 
@@ -379,58 +491,93 @@ pub fn import_questions(
             None => String::new(),
         };
 
-        // 生成选项 JSON
-        let options_json = serde_json::to_string(&options).map_err(|e| e.to_string())?;
-        let answer_json = serde_json::to_string(&answer).map_err(|e| e.to_string())?;
-
-        // 检查重复 + 按策略处理
-        let strategy = duplicate_strategy.as_deref().unwrap_or("append");
-
-        if strategy == "overwrite" || strategy == "skip" {
-            // 查询是否已存在相同题目的题目
-            let existing: Option<String> = conn
-                .query_row(
-                    "SELECT id FROM questions WHERE bank_id=?1 AND stem=?2",
-                    rusqlite::params![bank_id, stem],
-                    |row| row.get(0),
-                )
-                .ok();
-
-            if let Some(existing_id) = existing {
-                if strategy == "skip" {
-                    skipped += 1;
-                    continue;
-                }
-                // overwrite: 更新已有题目
-                match conn.execute(
-                    "UPDATE questions SET type=?1, options=?2, answer=?3, explanation=?4 WHERE id=?5",
-                    rusqlite::params![q_type, options_json, answer_json, explanation, existing_id],
-                ) {
+        // overwrite 策略：立即执行 UPDATE
+        if strategy == "overwrite" && is_duplicate {
+            if let Some(existing_id) = stem_id_map.get(&stem) {
+                match update_stmt.execute(rusqlite::params![
+                    q_type, options_json, answer_json, explanation, existing_id
+                ]) {
                     Ok(_) => overwritten += 1,
                     Err(e) => {
                         failed += 1;
                         errors.push(format!("第 {} 行：更新失败 - {}", row_idx + 1, e));
                     }
                 }
-                continue;
+            }
+            continue;
+        }
+
+        // 收集到批量插入队列
+        insert_rows.push(ProcessedRow {
+            stem,
+            q_type,
+            options_json,
+            answer_json,
+            explanation,
+        });
+    }
+
+    // ===== Phase 3: 批量插入（使用多行 VALUES，大幅减少 SQLite 执行次数） =====
+    // 释放预编译 UPDATE 语句的借用，以便事务可以获取 conn 的可变借用
+    drop(update_stmt);
+
+    if !insert_rows.is_empty() {
+        // 使用 rusqlite::Transaction 自动管理 BEGIN/COMMIT
+        let tx = conn.transaction().map_err(|e| format!("开启事务失败: {}", e))?;
+
+        // 每批最多 500 行的多行 INSERT（每行 7 个参数，500×7=3500，低于 SQLite 的 32766 限制）
+        const BATCH_SIZE: usize = 500;
+        for chunk in insert_rows.chunks(BATCH_SIZE) {
+            let mut sql = String::with_capacity(chunk.len() * 180);
+            sql.push_str("INSERT INTO questions (id, bank_id, stem, type, options, answer, explanation) VALUES ");
+
+            let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::with_capacity(chunk.len() * 7);
+
+            for (i, row) in chunk.iter().enumerate() {
+                if i > 0 {
+                    sql.push_str(", ");
+                }
+                let base = i * 7 + 1;
+                sql.push_str(&format!("(?{},?{},?{},?{},?{},?{},?{})", base, base+1, base+2, base+3, base+4, base+5, base+6));
+
+                let id = uuid::Uuid::new_v4().to_string();
+                all_params.push(Box::new(id));
+                all_params.push(Box::new(bank_id.clone()));
+                all_params.push(Box::new(row.stem.clone()));
+                all_params.push(Box::new(row.q_type.clone()));
+                all_params.push(Box::new(row.options_json.clone()));
+                all_params.push(Box::new(row.answer_json.clone()));
+                all_params.push(Box::new(row.explanation.clone()));
+            }
+
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = all_params.iter().map(|p| p.as_ref()).collect();
+
+            match tx.execute(&sql, param_refs.as_slice()) {
+                Ok(n) => success += n as u32,
+                Err(_e) => {
+                    // 批量中有失败时，逐条重试以区分成功/失败行
+                    for row in chunk {
+                        let id = uuid::Uuid::new_v4().to_string();
+                        match tx.execute(
+                            "INSERT INTO questions (id, bank_id, stem, type, options, answer, explanation)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                            rusqlite::params![
+                                id, bank_id, row.stem, row.q_type,
+                                row.options_json, row.answer_json, row.explanation
+                            ],
+                        ) {
+                            Ok(_) => success += 1,
+                            Err(e2) => {
+                                failed += 1;
+                                errors.push(format!("插入失败（题干: {}）: {}", &row.stem[..std::cmp::min(50, row.stem.len())], e2));
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        // 无重复（或策略为 append）→ 插入
-        let id = Uuid::new_v4().to_string();
-        match conn.execute(
-            "INSERT INTO questions (id, bank_id, stem, type, options, answer, explanation)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![
-                id, bank_id, stem, q_type, options_json, answer_json, explanation
-            ],
-        ) {
-            Ok(_) => success += 1,
-            Err(e) => {
-                failed += 1;
-                errors.push(format!("第 {} 行：插入失败 - {}", row_idx + 1, e));
-            }
-        }
+        tx.commit().map_err(|e| format!("提交事务失败: {}", e))?;
     }
 
     Ok(ImportResult {
@@ -440,16 +587,14 @@ pub fn import_questions(
         overwritten,
         errors,
     })
-}
-
-/// 导出题目为 Excel（xlsx 格式），返回文件路径
+}/// 导出题目为 Excel（xlsx 格式），返回文件路径
 #[tauri::command]
 pub fn export_questions(
     state: tauri::State<DbState>,
     bank_id: String,
     save_path: String,
 ) -> Result<String, String> {
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -615,7 +760,7 @@ pub fn check_duplicate_stems(
     sheet_name: String,
     stem_col: usize,
 ) -> Result<DuplicateCheckResult, String> {
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn.lock().map_err(|e| e.to_string())?;
 
     // 读取 Excel
     let range = open_spreadsheet!(&file_path, workbook, {
@@ -624,14 +769,14 @@ pub fn check_duplicate_stems(
             .map_err(|e| format!("读取工作表 '{}' 失败: {}", sheet_name, e))
     })?;
 
-    let rows = range.rows();
+    let rows: Vec<Vec<calamine::Data>> = range.rows().map(|r| r.to_vec()).collect();
     if rows.len() < 2 {
         return Err("文件至少需要标题行和一行数据".into());
     }
 
     let mut duplicate_stems: Vec<String> = Vec::new();
 
-    for row in rows.skip(1) {
+    for row in rows.iter().skip(1) {
         if row.is_empty() {
             continue;
         }
@@ -678,7 +823,7 @@ pub fn batch_set_type(
     question_ids: Vec<String>,
     q_type: String,
 ) -> Result<u32, String> {
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut count = 0u32;
     for id in &question_ids {
         match conn.execute(
@@ -698,7 +843,7 @@ pub fn batch_delete_questions(
     state: tauri::State<DbState>,
     question_ids: Vec<String>,
 ) -> Result<u32, String> {
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut count = 0u32;
     for id in &question_ids {
         conn.execute(
@@ -720,7 +865,7 @@ pub fn clear_bank_questions(
     state: tauri::State<DbState>,
     bank_id: String,
 ) -> Result<u32, String> {
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn.lock().map_err(|e| e.to_string())?;
     // 先清理练习记录（否则外键约束会阻止删除题目）
     let _ = conn.execute(
         "DELETE FROM practice_records WHERE bank_id=?1",
