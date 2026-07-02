@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 // ============================================================
 // 刷题助手 — 模拟考试（含考前设置）
 // ============================================================
@@ -12,6 +12,9 @@ import {
   CloseCircleOutlined,
   CheckOutlined,
   CloseOutlined,
+  DownOutlined,
+  LeftOutlined,
+  RightOutlined,
 } from '@ant-design/icons-vue'
 import { usePracticeStore } from '../stores/practice'
 import { invoke } from '@tauri-apps/api/tauri'
@@ -41,6 +44,14 @@ const indeterminateMode = ref(false)
 const shuffleMode = ref(false)
 /** 各题目的选项排列映射：questionId → displayIdx → originalIdx */
 const optionShuffleMaps = ref<Map<string, number[]>>(new Map())
+
+/** 考试结果回顾分页 */
+const reviewPage = ref(1)
+const reviewPageSize = 20
+const paginatedReviewQuestions = computed(() => {
+  const start = (reviewPage.value - 1) * reviewPageSize
+  return store.questions.slice(start, start + reviewPageSize)
+})
 
 /** 生成随机排列（Fisher-Yates） */
 function generateShuffle(n: number): number[] {
@@ -198,6 +209,7 @@ async function startExam() {
 
   settingStep.value = 'exam'
   examSubmitted.value = false
+  reviewPage.value = 1
 
   // 筛选出抽取数量 > 0 的题型（未分类题型传空字符串给后端）
   const ptl: Record<string, number> = {}
@@ -364,6 +376,12 @@ function getReviewOptionClass(q: Question, idx: number): string {
   return ''
 }
 
+function onReviewPageChange(page: number) {
+  reviewPage.value = page
+  const el = document.querySelector('.result-page')
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
@@ -517,7 +535,7 @@ function handleKeydown(e: KeyboardEvent) {
 
     <!-- ===== 考试中 ===== -->
     <div v-else-if="settingStep === 'exam' && !examSubmitted">
-      <!-- 顶部信息栏 -->
+      <!-- 顶部状态栏：计时器 + 进度 -->
       <div class="exam-header">
         <a-tag color="orange">模拟考试</a-tag>
         <span
@@ -526,19 +544,32 @@ function handleKeydown(e: KeyboardEvent) {
         >
           ⏱ {{ formatTime(remainingSeconds) }}
         </span>
-        <span>{{ store.answeredCount }} / {{ store.totalCount }} 已答</span>
-        <a-space style="margin-left: 12px">
-          <a-switch v-model:checked="shuffleMode" size="small" />
-          <span style="font-size: 12px; color: #999">打乱顺序</span>
-        </a-space>
-        <a-space style="margin-left: 8px">
-          <a-switch v-model:checked="indeterminateMode" size="small" />
-          <span style="font-size: 12px; color: #999">不定项</span>
-        </a-space>
+        <span style="margin-right: 12px">{{ store.answeredCount }} / {{ store.totalCount }} 已答</span>
+        <a-dropdown>
+          <a-button :style="{ marginLeft: '16px' }">
+            <DownOutlined /> 更多
+          </a-button>
+          <template #overlay>
+            <a-menu>
+              <a-menu-item>
+                <a-space>
+                  <span>不定项</span>
+                  <a-switch v-model:checked="indeterminateMode" size="small" />
+                </a-space>
+              </a-menu-item>
+              <a-menu-divider />
+              <a-menu-item>
+                <a-space>
+                  <span>打乱选项顺序</span>
+                  <a-switch v-model:checked="shuffleMode" size="small" />
+                </a-space>
+              </a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
         <a-button
           type="primary"
           danger
-          style="margin-left: 16px"
           :disabled="examSubmitted"
           @click="submitExam(false)"
         >
@@ -554,40 +585,75 @@ function handleKeydown(e: KeyboardEvent) {
         </a-empty>
       </div>
 
-      <!-- 题目列表 -->
-      <div v-else class="question-list">
-        <div
-          v-for="(q, qIdx) in store.questions"
-          :key="q.id"
-          class="exam-question"
-        >
+      <!-- 答题区域 - 逐题显示（性能优化：避免大数据量下渲染所有题目的 DOM） -->
+      <div v-else class="exam-question-area">
+        <!-- 当前题目进度 -->
+        <div class="exam-progress-row">
+          <a-progress
+            :percent="Math.round(((store.currentIndex + 1) / store.totalCount) * 100)"
+            :show-info="false"
+            size="small"
+            style="width: 100%"
+          />
+          <div class="exam-progress-label">
+            <span>第 <strong>{{ store.currentIndex + 1 }}</strong> / {{ store.totalCount }} 题</span>
+          </div>
+        </div>
+
+        <!-- 当前题目 -->
+        <div v-if="store.currentQuestion" class="exam-question">
           <div class="question-stem">
-            <span class="q-number">{{ qIdx + 1 }}.</span>
-            <a-tag v-if="indeterminateMode && isChoiceType(q.type)" color="orange" size="small" style="margin-right: 6px">
+            <span class="q-number">{{ store.currentIndex + 1 }}.</span>
+            <a-tag v-if="indeterminateMode && isChoiceType(store.currentQuestion.type)" color="orange" size="small" style="margin-right: 6px">
               不定项选择
             </a-tag>
-            <a-tag v-else-if="q.type" :color="typeColors[q.type]" size="small" style="margin-right: 6px">
-              {{ typeLabels[q.type] || q.type }}
+            <a-tag v-else-if="store.currentQuestion.type" :color="typeColors[store.currentQuestion.type]" size="small" style="margin-right: 6px">
+              {{ typeLabels[store.currentQuestion.type] || store.currentQuestion.type }}
             </a-tag>
-            {{ q.stem }}
+            {{ store.currentQuestion.stem }}
           </div>
 
           <div class="options-list">
             <div
-              v-for="(opt, idx) in (shuffleMode && optionShuffleMaps.get(q.id))
-                ? optionShuffleMaps.get(q.id)!.map(i => q.options[i])
-                : q.options"
-              :key="shuffleMode && optionShuffleMaps.get(q.id) ? optionShuffleMaps.get(q.id)![idx] : idx"
+              v-for="(opt, idx) in (shuffleMode && optionShuffleMaps.get(store.currentQuestion.id))
+                ? optionShuffleMaps.get(store.currentQuestion.id)!.map(i => store.currentQuestion.options[i])
+                : store.currentQuestion.options"
+              :key="shuffleMode && optionShuffleMaps.get(store.currentQuestion.id) ? optionShuffleMaps.get(store.currentQuestion.id)![idx] : idx"
               class="option-item"
-              :class="getOptionClass(q.id, idx)"
-              @click="selectOption(q.id, idx)"
+              :class="getOptionClass(store.currentQuestion.id, idx)"
+              @click="selectOption(store.currentQuestion.id, idx)"
             >
               <span class="option-letter">{{ String.fromCharCode(65 + idx) }}</span>
               <span class="option-text">{{ opt.replace(/^[A-D][.、]\s*/, '') }}</span>
             </div>
           </div>
+        </div>
 
-          <a-divider />
+        <!-- 底部导航 -->
+        <div class="exam-nav-buttons">
+          <a-space>
+            <a-button
+              :disabled="store.currentIndex === 0"
+              @click="store.prev()"
+            >
+              <LeftOutlined /> 上一题
+            </a-button>
+            <a-button
+              v-if="store.currentIndex < store.totalCount - 1"
+              type="primary"
+              @click="store.next()"
+            >
+              下一题 <RightOutlined />
+            </a-button>
+            <a-button
+              v-else
+              type="primary"
+              danger
+              @click="submitExam(false)"
+            >
+              交卷
+            </a-button>
+          </a-space>
         </div>
       </div>
     </div>
@@ -629,14 +695,28 @@ function handleKeydown(e: KeyboardEvent) {
           </span>
         </h3>
 
+        <!-- 分页控制 -->
+        <div v-if="store.totalCount > reviewPageSize" class="review-pagination-bar">
+          <a-pagination
+            v-model:current="reviewPage"
+            :total="store.totalCount"
+            :page-size="reviewPageSize"
+            :show-total="(total: number) => `共 ${total} 题，第 ${reviewPage} / ${Math.ceil(total / reviewPageSize)} 页`"
+            show-size-changer
+            :page-size-options="['10', '20', '50', '100']"
+            @change="onReviewPageChange"
+            size="small"
+          />
+        </div>
+
         <div
-          v-for="(q, qIdx) in store.questions"
+          v-for="(q, localIdx) in paginatedReviewQuestions"
           :key="q.id"
           class="review-card"
           :class="{ 'review-card-wrong': isWrong(q) || isUnanswered(q) }"
         >
           <div class="review-card-header">
-            <span class="review-q-number">{{ qIdx + 1 }}.</span>
+            <span class="review-q-number">{{ (reviewPage - 1) * reviewPageSize + localIdx + 1 }}.</span>
             <a-tag v-if="q.type" :color="typeColors[q.type]" size="small">
               {{ typeLabels[q.type] || q.type }}
             </a-tag>
@@ -694,6 +774,19 @@ function handleKeydown(e: KeyboardEvent) {
             {{ q.explanation }}
           </div>
         </div>
+
+        <!-- 底部翻页 -->
+        <div v-if="store.totalCount > reviewPageSize" class="review-pagination-bar">
+          <a-pagination
+            v-model:current="reviewPage"
+            :total="store.totalCount"
+            :page-size="reviewPageSize"
+            :show-total="(total: number) => `共 ${total} 题，第 ${reviewPage} / ${Math.ceil(total / reviewPageSize)} 页`"
+            show-size-changer
+            :page-size-options="['10', '20', '50', '100']"
+            size="small"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -712,6 +805,29 @@ function handleKeydown(e: KeyboardEvent) {
 .exam-header {
   display: flex;
   align-items: center;
+}
+
+.exam-question-area {
+  margin-top: 12px;
+}
+
+.exam-progress-row {
+  margin-bottom: 20px;
+}
+
+.exam-progress-label {
+  text-align: center;
+  margin-top: 6px;
+  font-size: 14px;
+  color: #666;
+}
+
+.exam-nav-buttons {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
 }
 
 .question-stem {
@@ -951,5 +1067,11 @@ function handleKeydown(e: KeyboardEvent) {
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-line;
+}
+
+.review-pagination-bar {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0;
 }
 </style>
