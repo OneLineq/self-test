@@ -128,7 +128,11 @@ function showAdd() {
 }
 
 function showEdit(q: Question) {
-  editingQuestion.value = { ...q, options: [...q.options] }
+  editingQuestion.value = {
+    ...q,
+    options: [...q.options],
+    answer: Array.isArray(q.answer) ? q.answer.join(',') : q.answer,
+  }
   editVisible.value = true
 }
 
@@ -147,8 +151,10 @@ async function handleSave() {
   }
 
   /** 保存前处理答案：多选逗号分隔字符串转为数组 */
-function toSaveAnswer(answer: string | string[]): string | string[] {
-  if (typeof answer !== 'string') return answer
+function toSaveAnswer(answer: unknown): string | string[] {
+  // 已经是数组，深拷贝一份防引用污染
+  if (Array.isArray(answer)) return [...answer]
+  if (typeof answer !== 'string') return ''
   const letters = answer.replace(/,/g, '').replace(/，/g, '').trim().toUpperCase()
   if (letters.length > 1 && /^[A-J]+$/.test(letters)) {
     return letters.split('')

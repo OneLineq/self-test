@@ -482,6 +482,22 @@ function handleKeydown(e: KeyboardEvent) {
           <a-form-item>
             <template #label>
               <span>
+                打乱答案顺序
+                <a-tooltip title="开启后，多选答案不区分选择顺序（A,B 与 B,A 都判为正确）">
+                  <ExclamationCircleOutlined style="color: #999; font-size: 12px" />
+                </a-tooltip>
+              </span>
+            </template>
+            <a-switch v-model:checked="store.sortAnswerOrder" />
+            <span style="margin-left: 8px; color: #999; font-size: 12px">
+              多选答案不区分顺序
+            </span>
+          </a-form-item>
+
+          <!-- 打乱选项顺序 -->
+          <a-form-item>
+            <template #label>
+              <span>
                 打乱选项顺序
                 <a-tooltip title="开启后，每道题的选项顺序会被随机打乱，防止背答案">
                   <ExclamationCircleOutlined style="color: #999; font-size: 12px" />
