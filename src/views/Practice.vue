@@ -549,6 +549,12 @@ function navDotStyle(idx: number): Record<string, string> {
                 <span>不定项</span>
               </a-space>
             </a-menu-item>
+            <a-menu-item>
+              <a-space>
+                <a-switch v-model:checked="store.sortAnswerOrder" size="small" />
+                <span>打乱答案顺序</span>
+              </a-space>
+            </a-menu-item>
             <a-menu-divider />
             <a-menu-item>
               <a-space>

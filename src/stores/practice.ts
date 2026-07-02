@@ -7,6 +7,16 @@ import { invoke } from '@tauri-apps/api/tauri'
 import type { Question, PracticeMode } from '../types'
 import { normalizeQuestion } from '../types'
 
+/** 多选答案比较（支持排序模式） */
+function matchAnswer(correct: string[], userAnswer: string, sortFirst: boolean): boolean {
+  if (sortFirst) {
+    const sorted = [...correct].sort().join(',')
+    const userSorted = userAnswer.split(',').filter(Boolean).sort().join(',')
+    return sorted === userSorted
+  }
+  return correct.join(',') === userAnswer
+}
+
 export const usePracticeStore = defineStore('practice', () => {
   const questions = ref<Question[]>([])
   const currentIndex = ref(0)
@@ -16,6 +26,9 @@ export const usePracticeStore = defineStore('practice', () => {
   const loading = ref(false)
   /** 侧边栏已确认退出，子页面路由守卫跳过 */
   const skipLeaveConfirm = ref(false)
+
+  /** 多选答案不区分顺序（A,B === B,A） */
+  const sortAnswerOrder = ref(false)
 
   /** 当前题目 */
   const currentQuestion = computed(() => questions.value[currentIndex.value] ?? null)
@@ -33,7 +46,7 @@ export const usePracticeStore = defineStore('practice', () => {
       const q = questions.value.find(q => q.id === qid)
       if (q) {
         const correct = Array.isArray(q.answer)
-          ? q.answer.join(',') === answer
+          ? matchAnswer(q.answer, answer, sortAnswerOrder.value)
           : q.answer === answer
         if (correct) count++
       }
@@ -88,7 +101,7 @@ export const usePracticeStore = defineStore('practice', () => {
     if (!q) return
 
     const correct = Array.isArray(q.answer)
-      ? q.answer.join(',') === answer
+      ? matchAnswer(q.answer, answer, sortAnswerOrder.value)
       : q.answer === answer
 
     await invoke('record_practice', {
@@ -106,8 +119,8 @@ export const usePracticeStore = defineStore('practice', () => {
       const q = questions.value.find(q => q.id === qid)
       if (!q) continue
       const correct = Array.isArray(q.answer)
-        ? q.answer.join(',') === answer
-        : q.answer === answer
+          ? matchAnswer(q.answer, answer, sortAnswerOrder.value)
+          : q.answer === answer
       await invoke('record_practice', {
         questionId: qid,
         bankId: q.bank_id,
@@ -155,7 +168,7 @@ export const usePracticeStore = defineStore('practice', () => {
     const ans = userAnswers.value.get(questionId)
     if (!q || ans === undefined) return false
     if (Array.isArray(q.answer)) {
-      return q.answer.join(',') === ans
+      return matchAnswer(q.answer, ans, sortAnswerOrder.value)
     }
     return q.answer === ans
   }
@@ -191,6 +204,7 @@ export const usePracticeStore = defineStore('practice', () => {
     correctCount,
     loadQuestions,
     shuffleQuestionOrder,
+    sortAnswerOrder,
     submitAnswer,
     submitExamAnswers,
     next,
