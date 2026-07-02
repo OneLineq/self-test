@@ -146,14 +146,24 @@ async function handleSave() {
     return
   }
 
-  try {
+  /** 保存前处理答案：多选逗号分隔字符串转为数组 */
+function toSaveAnswer(answer: string | string[]): string | string[] {
+  if (typeof answer !== 'string') return answer
+  const letters = answer.replace(/,/g, '').replace(/，/g, '').trim().toUpperCase()
+  if (letters.length > 1 && /^[A-J]+$/.test(letters)) {
+    return letters.split('')
+  }
+  return answer
+}
+
+try {
     if ((q as any).id) {
       await invoke('update_question', {
         id: (q as any).id,
         stem: q.stem,
         type: q.type || '',
         options: q.options,
-        answer: typeof q.answer === 'string' ? q.answer : JSON.parse(JSON.stringify(q.answer)),
+        answer: toSaveAnswer(q.answer || ''),
         explanation: q.explanation || '',
       })
       message.success('更新成功')
@@ -163,7 +173,7 @@ async function handleSave() {
         stem: q.stem,
         type: q.type || '',
         options: q.options,
-        answer: typeof q.answer === 'string' ? q.answer : JSON.parse(JSON.stringify(q.answer)),
+        answer: toSaveAnswer(q.answer || ''),
         explanation: q.explanation || '',
       })
       message.success('添加成功')
