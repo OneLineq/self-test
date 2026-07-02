@@ -553,15 +553,15 @@ function handleKeydown(e: KeyboardEvent) {
             <a-menu>
               <a-menu-item>
                 <a-space>
-                  <span>不定项</span>
                   <a-switch v-model:checked="indeterminateMode" size="small" />
+                  <span>不定项</span>
                 </a-space>
               </a-menu-item>
               <a-menu-divider />
               <a-menu-item>
                 <a-space>
-                  <span>打乱选项顺序</span>
                   <a-switch v-model:checked="shuffleMode" size="small" />
+                  <span>打乱选项顺序</span>
                 </a-space>
               </a-menu-item>
             </a-menu>
