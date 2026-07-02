@@ -18,7 +18,7 @@ import {
 } from '@ant-design/icons-vue'
 import { usePracticeStore } from '../stores/practice'
 import { invoke } from '@tauri-apps/api/tauri'
-import { isChoiceType, normalizeQuestion } from '../types'
+import { isChoiceType, isMultiAnswer, normalizeQuestion } from '../types'
 import type { Question } from '../types'
 
 const route = useRoute()
@@ -260,7 +260,7 @@ function selectOption(questionId: string, optIndex: number) {
   if (!q) return
   const isChoice = isChoiceType(q.type)
   // 不定项模式下的选择题 或 原有多选题：切换选中
-  const isMulti = (indeterminateMode.value && isChoice) || Array.isArray(q.answer)
+  const isMulti = (indeterminateMode.value && isChoice) || isMultiAnswer(q.answer)
   if (isMulti) {
     let current = store.userAnswers.get(questionId) || ''
     const parts = current ? current.split(',').filter(Boolean) : []

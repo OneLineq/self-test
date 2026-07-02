@@ -19,7 +19,7 @@ import {
 } from '@ant-design/icons-vue'
 import { usePracticeStore } from '../stores/practice'
 import { invoke } from '@tauri-apps/api/tauri'
-import { PracticeModeLabel, isChoiceType } from '../types'
+import { PracticeModeLabel, isChoiceType, isMultiAnswer } from '../types'
 import type { PracticeMode, PracticeMemoryItem } from '../types'
 
 const route = useRoute()
@@ -217,7 +217,7 @@ function handleKeydown(e: KeyboardEvent) {
     case 'Enter':
       if (
         selectedAnswer.value &&
-        (Array.isArray(q.answer) || (indeterminateMode.value && isChoiceType(q.type)) || q.type === 'fill')
+        (isMultiAnswer(q.answer) || (indeterminateMode.value && isChoiceType(q.type)) || q.type === 'fill')
       ) {
         e.preventDefault()
         submitMulti()
@@ -349,7 +349,7 @@ function selectOption(optIndex: number) {
 
   const letter = getOriginalLetter(optIndex)
   const isChoice = question.value ? isChoiceType(question.value.type) : false
-  const isMulti = (indeterminateMode.value && isChoice) || Array.isArray(question.value?.answer)
+  const isMulti = (indeterminateMode.value && isChoice) || isMultiAnswer(question.value?.answer)
 
   if (isMulti) {
     // 不定项 / 多选题：切换选中
@@ -686,7 +686,7 @@ function navDotStyle(idx: number): Record<string, string> {
         v-if="
           !store.showResult.get(question.id) &&
           selectedAnswer &&
-          (Array.isArray(question.answer) || (indeterminateMode && isChoiceType(question.type)))
+          (isMultiAnswer(question.answer) || (indeterminateMode && isChoiceType(question.type)))
         "
         style="text-align: center; margin-top: 16px"
       >

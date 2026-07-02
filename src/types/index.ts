@@ -76,7 +76,7 @@ export function readQuestionType(raw: unknown): string {
 }
 
 /** 答案是否为多选格式（数组或多字母） */
-function isMultiAnswer(answer: unknown): boolean {
+export function isMultiAnswer(answer: unknown): boolean {
   if (Array.isArray(answer)) return answer.length > 0
   if (typeof answer === 'string') {
     const cleaned = answer.trim().toUpperCase().replace(/,/g, '').replace(/，/g, '').replace(/\s/g, '')
