@@ -11,6 +11,7 @@ import {
   CheckOutlined,
   CloseOutlined,
   ExclamationCircleOutlined,
+  DownOutlined,
   HistoryOutlined,
   DeleteOutlined,
   CheckCircleOutlined,
@@ -536,14 +537,28 @@ function navDotStyle(idx: number): Record<string, string> {
         <span style="color: #52c41a">✓ {{ store.correctCount }}</span>
       </a-space>
       <a-progress :percent="progress" :show-info="false" style="flex: 1; margin: 0 16px" />
-      <a-space style="margin-right: 12px">
-        <a-switch v-model:checked="indeterminateMode" size="small" />
-        <span style="font-size: 12px; color: #999">不定项</span>
-      </a-space>
-      <a-space style="margin-right: 12px">
-        <a-switch v-model:checked="shuffleMode" size="small" />
-        <span style="font-size: 12px; color: #999">打乱顺序</span>
-      </a-space>
+      <a-dropdown>
+        <a-button>
+          <DownOutlined /> 更多
+        </a-button>
+        <template #overlay>
+          <a-menu>
+            <a-menu-item>
+              <a-space>
+                <span>不定项</span>
+                <a-switch v-model:checked="indeterminateMode" size="small" />
+              </a-space>
+            </a-menu-item>
+            <a-menu-divider />
+            <a-menu-item>
+              <a-space>
+                <span>打乱选项顺序</span>
+                <a-switch v-model:checked="shuffleMode" size="small" />
+              </a-space>
+            </a-menu-item>
+          </a-menu>
+        </template>
+      </a-dropdown>
       <a-button @click="exitPractice">退出</a-button>
     </div>
 
@@ -699,7 +714,7 @@ function navDotStyle(idx: number): Record<string, string> {
             :style="wrongSet.has(question.id) ? { background: '#f5222d', borderColor: '#f5222d', color: '#fff' } : {}"
             @click="toggleWrong"
           >
-            {{ wrongSet.has(question.id) ? '错题' : '标记为错题' }}
+            {{ wrongSet.has(question.id) ? '移出错题集' : '标记为错题' }}
           </a-button>
           <a-button
             v-if="mode === 'wrong'"
