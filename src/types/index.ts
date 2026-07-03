@@ -197,3 +197,4 @@ export interface ColumnMapping {
   answer_col: number     // 答案列索引
   explanation_col: number | null // 解析列索引
 }
+

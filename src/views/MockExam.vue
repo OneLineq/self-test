@@ -478,7 +478,7 @@ function handleKeydown(e: KeyboardEvent) {
             </span>
           </a-form-item>
 
-          <!-- 打乱选项顺序 -->
+          <!-- 打乱答案顺序 -->
           <a-form-item>
             <template #label>
               <span>
@@ -575,15 +575,15 @@ function handleKeydown(e: KeyboardEvent) {
               </a-menu-item>
               <a-menu-item>
                 <a-space>
-                  <a-switch v-model:checked="store.sortAnswerOrder" size="small" />
-                  <span>打乱答案顺序</span>
+                  <a-switch v-model:checked="shuffleMode" size="small" />
+                  <span>打乱选项顺序</span>
                 </a-space>
               </a-menu-item>
               <a-menu-divider />
               <a-menu-item>
                 <a-space>
-                  <a-switch v-model:checked="shuffleMode" size="small" />
-                  <span>打乱选项顺序</span>
+                  <a-switch v-model:checked="store.sortAnswerOrder" size="small" />
+                  <span>打乱答案顺序</span>
                 </a-space>
               </a-menu-item>
             </a-menu>

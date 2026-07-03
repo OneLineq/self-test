@@ -119,13 +119,14 @@ function startPractice(bankId: string) {
               <a-button
                 type="primary"
                 :style="{ background: modeConfig.color, borderColor: modeConfig.color }"
-                :disabled="bank.question_count === 0 && mode !== 'wrong'"
+                :disabled="mode === 'wrong' ? bank.wrong_count === 0 : bank.question_count === 0"
                 @click="startPractice(bank.id)"
               >
                 <template #icon><PlayCircleOutlined /></template>
                 开始{{ title }}
               </a-button>
-              <a-button @click="router.push(mode === 'wrong' ? `/wrong-manage/${bank.id}` : `/questions/${bank.id}`)">
+              <a-button :disabled="mode === 'wrong' ? bank.wrong_count === 0 : false"
+              @click="router.push(mode === 'wrong' ? `/wrong-manage/${bank.id}` : `/questions/${bank.id}`)">
                 {{ mode === 'wrong' ? '管理错题' : '管理题目' }}
               </a-button>
             </template>
@@ -147,3 +148,5 @@ function startPractice(bankId: string) {
   margin: 0 auto;
 }
 </style>
+
+

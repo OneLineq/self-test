@@ -24,6 +24,7 @@ pub fn create_bank(state: tauri::State<DbState>, name: String) -> Result<Bank, S
         name,
         created_at: now,
         question_count: 0,
+        wrong_count: 0,
     })
 }
 
@@ -32,7 +33,8 @@ pub fn list_banks(state: tauri::State<DbState>) -> Result<Vec<Bank>, String> {
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
-            "SELECT b.id, b.name, b.created_at, COUNT(q.id) as q_count
+            "SELECT b.id, b.name, b.created_at, COUNT(q.id) as q_count,
+                    (SELECT COUNT(*) FROM practice_records pr WHERE pr.bank_id = b.id AND pr.is_correct = 0) as w_count
              FROM banks b LEFT JOIN questions q ON b.id = q.bank_id
              GROUP BY b.id ORDER BY b.created_at DESC",
         )
@@ -45,6 +47,7 @@ pub fn list_banks(state: tauri::State<DbState>) -> Result<Vec<Bank>, String> {
                 name: row.get(1)?,
                 created_at: row.get(2)?,
                 question_count: row.get(3)?,
+                wrong_count: row.get(4)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -72,6 +75,7 @@ pub fn get_bank(state: tauri::State<DbState>, id: String) -> Result<Option<Bank>
                 name: row.get(1)?,
                 created_at: row.get(2)?,
                 question_count: row.get(3)?,
+                wrong_count: row.get(4)?,
             })
         })
         .optional()
@@ -105,3 +109,9 @@ pub fn rename_bank(state: tauri::State<DbState>, id: String, name: String) -> Re
     .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+
+
+
+
+

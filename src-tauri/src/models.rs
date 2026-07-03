@@ -9,6 +9,7 @@ pub struct Bank {
     pub name: String,
     pub created_at: String,
     pub question_count: u32,
+    pub wrong_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
