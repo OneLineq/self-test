@@ -50,9 +50,18 @@ jobs:
 
       - name: Cross-compile Rust (Zig linker, target GLIBC 2.31)
         run: |
-          # Write Zig linker wrapper (printf avoids YAML heredoc indent issue)
-          printf '#!/bin/bash\nexec zig cc -target aarch64-linux-gnu.2.31 "$@"\n' \
-            > /tmp/zig-linker.sh
+          # rustc stable (mid-2026) passes GNU ld flags zig ld rejects
+          cat > /tmp/zig-linker.sh << 'EOF'
+          #!/bin/bash
+          args=()
+          for arg in "$@"; do
+            case "$arg" in
+              --fix-cortex-a53-843419|-Wl,--fix-cortex-a53-843419|-Wl,--no-undefined-version|-Wl,-znostart-stop-gc) ;;
+              *) args+=("$arg") ;;
+            esac
+          done
+          exec zig cc -target aarch64-linux-gnu.2.31 "${args[@]}"
+          EOF
           chmod +x /tmp/zig-linker.sh
 
           cd src-tauri
