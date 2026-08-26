@@ -44,9 +44,8 @@ jobs:
 
       - name: Build frontend
         run: |
-          # lockfile was generated via npmmirror; GH runners 404 on that CDN
-          sed -i 's|https://registry.npmmirror.com|https://registry.npmjs.org|g' package-lock.json
-          npm install --registry https://registry.npmjs.org
+          # lockfile 用 npmmirror；若 registry 切到 npmjs 出现缺包，可去掉 --no-package-lock
+          npm install --no-package-lock --registry https://registry.npmjs.org
           npm run build
 
       - name: Cross-compile Rust (Zig linker, target GLIBC 2.31)
