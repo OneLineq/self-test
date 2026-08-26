@@ -54,9 +54,9 @@ printf '%s\n' \
   '[Desktop Entry]' \
   'Type=Application' \
   'Name=SelfTest' \
-  'Name[zh_CN]=刷题助手' \
+  'Name[zh_CN]=理论训练考核系统' \
   'GenericName=Quiz Practice Tool' \
-  'Comment=刷题助手 - Quiz practice app' \
+  'Comment=理论训练考核系统 - Quiz practice app' \
   "Exec=env WEBKIT_DISABLE_COMPOSITING_MODE=1 ${PKG_NAME}" \
   "Icon=${PKG_NAME}" \
   'Terminal=false' \
@@ -121,7 +121,7 @@ printf '%s\n' \
   'Section: education' \
   'Priority: optional' \
   'Description: SelfTest - Quiz practice app' \
-  ' 刷题助手是一款基于 Tauri 的刷题练习应用。' \
+  ' 理论训练考核系统是一款基于 Tauri 的刷题练习应用。' \
   ' 支持题库管理、练习模式、模拟考试等功能。' \
   > "${PKG_DIR}/DEBIAN/control"
 

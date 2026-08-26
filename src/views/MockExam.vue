@@ -1,6 +1,6 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 // ============================================================
-// 刷题助手 — 模拟考试（含考前设置）
+// 理论训练考核系统 — 模拟考试（含考前设置）
 // ============================================================
 import { onMounted, onBeforeUnmount, ref, computed, watch, h } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
@@ -12,11 +12,13 @@ import {
   CloseCircleOutlined,
   CheckOutlined,
   CloseOutlined,
+  MinusOutlined,
   DownOutlined,
   LeftOutlined,
   RightOutlined,
 } from '@ant-design/icons-vue'
 import { usePracticeStore } from '../stores/practice'
+import { usePreferencesStore } from '../stores/preferences'
 import { invoke } from '@tauri-apps/api/tauri'
 import { isChoiceType, isMultiAnswer, normalizeQuestion } from '../types'
 import type { Question } from '../types'
@@ -24,6 +26,7 @@ import type { Question } from '../types'
 const route = useRoute()
 const router = useRouter()
 const store = usePracticeStore()
+const prefs = usePreferencesStore()
 
 const bankId = route.params.bankId as string
 
@@ -39,11 +42,14 @@ const typeTotalCounts = ref<Record<string, number>>({})
 // 各题型要抽取的题目数
 const perTypeLimits = ref<Record<string, number>>({})
 /** 不定项模式：选择题不区分单选/多选，可自由选择一项或多项 */
-const indeterminateMode = ref(false)
+const indeterminateMode = ref(prefs.indeterminateMode)
 /** 打乱选项顺序模式 */
-const shuffleMode = ref(false)
+const shuffleMode = ref(prefs.shuffleOptions)
 /** 各题目的选项排列映射：questionId → displayIdx → originalIdx */
 const optionShuffleMaps = ref<Map<string, number[]>>(new Map())
+
+// 从首选项同步「打乱答案顺序」默认值（仅进入时一次，当场改不写回）
+store.sortAnswerOrder = prefs.sortAnswerOrder
 
 /** 考试结果回顾分页 */
 const reviewPage = ref(1)
@@ -353,16 +359,6 @@ function isOptionCorrectAnswer(q: Question, idx: number): boolean {
   return correct === letter
 }
 
-/** 该选项是否为用户选错的选项（用户选了但不是正确答案） */
-function isOptionWrongSelected(q: Question, idx: number): boolean {
-  const letter = String.fromCharCode(65 + idx)
-  const userAns = store.userAnswers.get(q.id) || ''
-  const parts = userAns.split(',').filter(Boolean)
-  if (!parts.includes(letter)) return false
-  // 用户选了该项，但该项不是正确答案
-  return !isOptionCorrectAnswer(q, idx)
-}
-
 /** 审题模式下选项的样式类 */
 function getReviewOptionClass(q: Question, idx: number): string {
   const letter = String.fromCharCode(65 + idx)
@@ -371,7 +367,17 @@ function getReviewOptionClass(q: Question, idx: number): string {
   const isSelected = parts.includes(letter)
   const isCorrectOpt = isOptionCorrectAnswer(q, idx)
 
-  if (isCorrectOpt) return 'review-option-correct'
+  if (isCorrectOpt && isSelected) {
+    // 多选题且顺序敏感时，检查选项位置
+    if (Array.isArray(q.answer) && !store.sortAnswerOrder) {
+      const userParts = userAns.split(',').filter(Boolean)
+      const correctPos = q.answer.indexOf(letter)
+      const userPos = userParts.indexOf(letter)
+      if (correctPos !== userPos) return 'review-option-missed'
+    }
+    return 'review-option-correct'
+  }
+  if (isCorrectOpt && !isSelected) return 'review-option-missed'
   if (isSelected && !isCorrectOpt) return 'review-option-wrong'
   return ''
 }
@@ -762,8 +768,9 @@ function handleKeydown(e: KeyboardEvent) {
             >
               <span class="option-letter">{{ String.fromCharCode(65 + idx) }}</span>
               <span class="option-text">{{ opt.replace(/^[A-D][.、]\s*/, '') }}</span>
-              <CheckOutlined v-if="isOptionCorrectAnswer(q, idx)" class="option-icon option-icon-correct" />
-              <CloseOutlined v-if="isOptionWrongSelected(q, idx)" class="option-icon option-icon-wrong" />
+              <CheckOutlined v-if="getReviewOptionClass(q, idx) === 'review-option-correct'" class="option-icon option-icon-correct" />
+              <MinusOutlined v-if="getReviewOptionClass(q, idx) === 'review-option-missed'" class="option-icon option-icon-missed" />
+              <CloseOutlined v-if="getReviewOptionClass(q, idx) === 'review-option-wrong'" class="option-icon option-icon-wrong" />
             </div>
           </div>
 
@@ -1037,6 +1044,16 @@ function handleKeydown(e: KeyboardEvent) {
   color: #fff;
 }
 
+.review-option-missed {
+  border-color: #ffd591 !important;
+  background: #fff7e6 !important;
+}
+
+.review-option-missed .option-letter {
+  background: #fa8c16;
+  color: #fff;
+}
+
 .review-option-wrong {
   border-color: #ffa39e !important;
   background: #fff2f0 !important;
@@ -1054,6 +1071,10 @@ function handleKeydown(e: KeyboardEvent) {
 
 .review-option .option-icon-correct {
   color: #52c41a;
+}
+
+.review-option .option-icon-missed {
+  color: #fa8c16;
 }
 
 .review-option .option-icon-wrong {

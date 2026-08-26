@@ -1,5 +1,5 @@
 // ============================================================
-// 刷题助手 — 练习 Store (Pinia)
+// 理论训练考核系统 — 练习 Store (Pinia)
 // ============================================================
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
@@ -27,8 +27,8 @@ export const usePracticeStore = defineStore('practice', () => {
   /** 侧边栏已确认退出，子页面路由守卫跳过 */
   const skipLeaveConfirm = ref(false)
 
-  /** 多选答案不区分顺序（A,B === B,A） */
-  const sortAnswerOrder = ref(false)
+  /** 多选答案不区分顺序（A,B === B,A）；默认与首选项一致为开 */
+  const sortAnswerOrder = ref(true)
 
   /** 当前题目 */
   const currentQuestion = computed(() => questions.value[currentIndex.value] ?? null)
@@ -90,6 +90,14 @@ export const usePracticeStore = defineStore('practice', () => {
     }
     questions.value = arr
     currentIndex.value = 0
+  }
+
+  /** 替换当前题目列表（主题筛选后使用） */
+  function setQuestions(list: Question[]) {
+    questions.value = list
+    currentIndex.value = 0
+    userAnswers.value = new Map()
+    showResult.value = new Map()
   }
 
   /** 提交答案 */
@@ -204,6 +212,7 @@ export const usePracticeStore = defineStore('practice', () => {
     correctCount,
     loadQuestions,
     shuffleQuestionOrder,
+    setQuestions,
     sortAnswerOrder,
     submitAnswer,
     submitExamAnswers,

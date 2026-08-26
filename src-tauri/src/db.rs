@@ -1,5 +1,5 @@
 // ============================================================
-// 刷题助手 — SQLite 数据库初始化与管理
+// 理论训练考核系统 — SQLite 数据库初始化与管理
 // ============================================================
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
@@ -19,6 +19,9 @@ pub fn init_db(app_dir: &Path) -> (Connection, PathBuf) {
         "
         PRAGMA journal_mode = WAL;
         PRAGMA foreign_keys = ON;
+        PRAGMA synchronous = NORMAL;
+        PRAGMA temp_store = MEMORY;
+        PRAGMA cache_size = -16000;
 
         CREATE TABLE IF NOT EXISTS banks (
             id          TEXT PRIMARY KEY,
@@ -63,6 +66,9 @@ pub fn init_db(app_dir: &Path) -> (Connection, PathBuf) {
         CREATE INDEX IF NOT EXISTS idx_questions_bank ON questions(bank_id);
         CREATE INDEX IF NOT EXISTS idx_practice_question ON practice_records(question_id);
         CREATE INDEX IF NOT EXISTS idx_practice_bank ON practice_records(bank_id);
+        CREATE INDEX IF NOT EXISTS idx_practice_timestamp ON practice_records(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_practice_wrong
+            ON practice_records(bank_id, question_id) WHERE is_correct = 0;
         ",
     )
     .expect("Failed to create tables");

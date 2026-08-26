@@ -1,5 +1,5 @@
 // ============================================================
-// 刷题助手 — 类型定义
+// 理论训练考核系统 — 类型定义
 // ============================================================
 
 /** 题库 */
@@ -8,6 +8,7 @@ export interface Bank {
   name: string
   created_at: string
   question_count: number
+  wrong_count: number
 }
 
 /** 题目 */
@@ -120,6 +121,107 @@ export function normalizeQuestion(raw: unknown): Question {
   const merged = { ...q, type: (explicit || q.type || '') as QuestionType }
   const resolved = resolveQuestionType(merged)
   return resolved === merged.type ? merged : { ...merged, type: resolved }
+}
+
+/** 题库名称是否匹配关键字（去空白、不区分大小写） */
+export function bankNameMatches(name: string, keyword: string): boolean {
+  const k = keyword.trim().toLowerCase()
+  if (!k) return true
+  return name.toLowerCase().includes(k)
+}
+
+/** 题目题干或选项是否匹配关键字（去空白、不区分大小写） */
+export function questionTextMatches(
+  q: Pick<Question, 'stem' | 'options'>,
+  keyword: string,
+): boolean {
+  const k = keyword.trim().toLowerCase()
+  if (!k) return true
+  const haystack = [q.stem, ...(q.options || [])].join('\n').toLowerCase()
+  return haystack.includes(k)
+}
+
+/** 主题练习筛选条件 */
+export interface TopicFilter {
+  bankId: string
+  /** 原始输入（含分隔符） */
+  raw: string
+  /** 是否正则模式 */
+  regex: boolean
+  /** 任一关键词命中 / 全部命中 */
+  match: 'any' | 'all'
+}
+
+export const TOPIC_FILTER_KEY = 'selftest.topicFilter'
+
+/** 拆分多关键词：空格、英文/中文逗号、换行 */
+export function splitTopicKeywords(raw: string): string[] {
+  return raw
+    .split(/[\s,，\n\r]+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+}
+
+/** 编译主题关键词；正则非法时返回 error */
+export function compileTopicMatchers(
+  raw: string,
+  regex: boolean,
+): { ok: true; matchers: Array<(text: string) => boolean> } | { ok: false; error: string } {
+  const parts = splitTopicKeywords(raw)
+  if (parts.length === 0) {
+    return { ok: false, error: '请输入至少一个关键词' }
+  }
+  const matchers: Array<(text: string) => boolean> = []
+  for (const part of parts) {
+    if (regex) {
+      try {
+        const re = new RegExp(part, 'i')
+        matchers.push(text => re.test(text))
+      } catch (e) {
+        return { ok: false, error: `正则无效「${part}」: ${e instanceof Error ? e.message : String(e)}` }
+      }
+    } else {
+      const lower = part.toLowerCase()
+      matchers.push(text => text.toLowerCase().includes(lower))
+    }
+  }
+  return { ok: true, matchers }
+}
+
+/** 题目是否匹配主题条件（题干 + 选项） */
+export function questionMatchesTopic(
+  q: Pick<Question, 'stem' | 'options'>,
+  raw: string,
+  regex: boolean,
+  match: 'any' | 'all',
+): boolean {
+  const compiled = compileTopicMatchers(raw, regex)
+  if (!compiled.ok) return false
+  const haystack = [q.stem, ...(q.options || [])].join('\n')
+  if (match === 'all') {
+    return compiled.matchers.every(fn => fn(haystack))
+  }
+  return compiled.matchers.some(fn => fn(haystack))
+}
+
+export function saveTopicFilter(filter: TopicFilter) {
+  sessionStorage.setItem(TOPIC_FILTER_KEY, JSON.stringify(filter))
+}
+
+export function loadTopicFilter(bankId: string): TopicFilter | null {
+  try {
+    const raw = sessionStorage.getItem(TOPIC_FILTER_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as TopicFilter
+    if (parsed.bankId !== bankId) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+export function clearTopicFilter() {
+  sessionStorage.removeItem(TOPIC_FILTER_KEY)
 }
 
 /** 练习模式标签 */

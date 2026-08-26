@@ -1,5 +1,5 @@
 ﻿// ============================================================
-// 刷题助手 — 题目管理 Commands（含 Excel 导入导出）
+// 理论训练考核系统 — 题目管理 Commands（含 Excel 导入导出）
 // ============================================================
 use crate::db::DbState;
 use crate::models::{DuplicateCheckResult, ImportResult, Question};

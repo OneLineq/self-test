@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // ============================================================
-// 刷题助手 — 试题管理（含 Excel 导入导出）
+// 理论训练考核系统 — 试题管理（含 Excel 导入导出）
 // ============================================================
 import { onMounted, ref, reactive, computed, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -16,10 +16,12 @@ import {
   UploadOutlined,
   TagsOutlined,
   ClearOutlined,
+  SearchOutlined,
 } from '@ant-design/icons-vue'
 import { invoke } from '@tauri-apps/api/tauri'
 import { open, save } from '@tauri-apps/api/dialog'
 import type { Question } from '../types'
+import { questionTextMatches } from '../types'
 
 const route = useRoute()
 const router = useRouter()
@@ -67,6 +69,7 @@ const filterType = ref<string>('')
 const filterAccuracyMode = ref<string>('')   // ''=不限, 'above'=高于, 'below'=低于
 const filterAccuracyValue = ref<number>(50)
 const filterWrongOnly = ref(false)
+const questionKeyword = ref('')
 
 /** 筛选后的题目列表 */
 const filteredQuestions = computed(() => {
@@ -88,6 +91,10 @@ const filteredQuestions = computed(() => {
   // 按错题集筛选
   if (filterWrongOnly.value) {
     list = list.filter(q => q.is_wrong)
+  }
+  // 题干 / 选项关键字
+  if (questionKeyword.value.trim()) {
+    list = list.filter(q => questionTextMatches(q, questionKeyword.value))
   }
   return list
 })
@@ -573,6 +580,14 @@ const columns = [
     <!-- 筛选栏 -->
     <div style="margin-bottom: 16px; padding: 12px 16px; background: #fafafa; border-radius: 8px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
       <span style="font-size: 13px; color: #666; font-weight: 500">筛选：</span>
+      <a-input
+        v-model:value="questionKeyword"
+        placeholder="搜索题干或选项"
+        allow-clear
+        style="width: 220px"
+      >
+        <template #prefix><SearchOutlined style="color: #bfbfbf" /></template>
+      </a-input>
       <a-select
         v-model:value="filterType"
         style="width: 120px"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // ============================================================
-// 刷题助手 — 练习记忆页面
+// 理论训练考核系统 — 练习记忆页面
 // ============================================================
 import { onMounted, ref, computed, h } from 'vue'
 import { useRouter } from 'vue-router'
@@ -80,14 +80,11 @@ const accuracy = computed(() => {
   return Math.round((stats.value.total_correct / stats.value.total_practice) * 100)
 })
 
-onMounted(async () => {
-  try {
-    stats.value = await invoke<GlobalStats>('get_global_stats')
-  } catch (e) {
-    console.error('加载统计失败', e)
-  } finally {
-    loading.value = false
-  }
+onMounted(() => {
+  invoke<GlobalStats>('get_global_stats')
+    .then(v => { stats.value = v })
+    .catch(e => console.error('加载统计失败', e))
+    .finally(() => { loading.value = false })
   bankStore.fetchBanks()
 })
 

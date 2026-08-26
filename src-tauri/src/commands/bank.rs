@@ -1,5 +1,5 @@
 // ============================================================
-// 刷题助手 — 题库管理 Commands
+// 理论训练考核系统 — 题库管理 Commands
 // ============================================================
 use crate::db::DbState;
 use crate::models::Bank;
@@ -33,10 +33,19 @@ pub fn list_banks(state: tauri::State<DbState>) -> Result<Vec<Bank>, String> {
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
-            "SELECT b.id, b.name, b.created_at, COUNT(q.id) as q_count,
-                    (SELECT COUNT(*) FROM practice_records pr WHERE pr.bank_id = b.id AND pr.is_correct = 0) as w_count
-             FROM banks b LEFT JOIN questions q ON b.id = q.bank_id
-             GROUP BY b.id ORDER BY b.created_at DESC",
+            "SELECT b.id, b.name, b.created_at,
+                    COALESCE(qs.q_count, 0),
+                    COALESCE(ws.w_count, 0)
+             FROM banks b
+             LEFT JOIN (
+                 SELECT bank_id, COUNT(*) AS q_count FROM questions GROUP BY bank_id
+             ) qs ON qs.bank_id = b.id
+             LEFT JOIN (
+                 SELECT bank_id, COUNT(DISTINCT question_id) AS w_count
+                 FROM practice_records WHERE is_correct = 0
+                 GROUP BY bank_id
+             ) ws ON ws.bank_id = b.id
+             ORDER BY b.created_at DESC",
         )
         .map_err(|e| e.to_string())?;
 
@@ -62,9 +71,11 @@ pub fn get_bank(state: tauri::State<DbState>, id: String) -> Result<Option<Bank>
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
-            "SELECT b.id, b.name, b.created_at, COUNT(q.id) as q_count
-             FROM banks b LEFT JOIN questions q ON b.id = q.bank_id
-             WHERE b.id = ?1 GROUP BY b.id",
+            "SELECT b.id, b.name, b.created_at,
+                    (SELECT COUNT(*) FROM questions WHERE bank_id = b.id),
+                    (SELECT COUNT(DISTINCT question_id) FROM practice_records
+                     WHERE bank_id = b.id AND is_correct = 0)
+             FROM banks b WHERE b.id = ?1",
         )
         .map_err(|e| e.to_string())?;
 

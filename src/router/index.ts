@@ -1,5 +1,5 @@
 // ============================================================
-// 刷题助手 — 路由配置
+// 理论训练考核系统 — 路由配置
 // ============================================================
 import { createRouter, createWebHistory } from 'vue-router'
 
@@ -28,6 +28,11 @@ const router = createRouter({
       component: () => import('../views/PracticeSelector.vue'),
     },
     {
+      path: '/topic',
+      name: 'Topic',
+      component: () => import('../views/PracticeSelector.vue'),
+    },
+    {
       path: '/exam',
       name: 'ExamSelector',
       component: () => import('../views/PracticeSelector.vue'),
@@ -37,6 +42,11 @@ const router = createRouter({
       path: '/practice/:bankId',
       name: 'Practice',
       component: () => import('../views/Practice.vue'),
+    },
+    {
+      path: '/topic/:bankId',
+      name: 'TopicSetup',
+      component: () => import('../views/TopicSetup.vue'),
     },
     {
       path: '/exam/:bankId',
@@ -72,6 +82,11 @@ const router = createRouter({
       path: '/guide',
       name: 'UserGuide',
       component: () => import('../views/UserGuide.vue'),
+    },
+    {
+      path: '/settings',
+      name: 'Settings',
+      component: () => import('../views/Settings.vue'),
     },
   ],
 })

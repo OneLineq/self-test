@@ -1,5 +1,5 @@
 // ============================================================
-// 刷题助手 — 练习模式 Commands
+// 理论训练考核系统 — 练习模式 Commands
 // ============================================================
 use crate::db::DbState;
 use crate::models::{PracticeRecord, Question};
@@ -271,37 +271,34 @@ pub fn get_practice_stats(
 }
 
 /// 获取全局统计（Dashboard 用）
+/// ponytail: 累计练习走 questions 汇总，禁止 questions ⋈ practice_records（题量×记录会炸）
 #[tauri::command]
 pub fn get_global_stats(
     state: tauri::State<DbState>,
 ) -> Result<serde_json::Value, String> {
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
-    let total_banks: u32 = conn
-        .query_row("SELECT COUNT(*) FROM banks", [], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
-
-    let total_questions: u32 = conn
-        .query_row("SELECT COUNT(*) FROM questions", [], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
-
-    let total_records: u32 = conn
-        .query_row("SELECT COUNT(*) FROM practice_records", [], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
-
-    let total_correct: u32 = conn
+    let (total_banks, total_questions, total_records, total_correct): (u32, u32, u32, u32) = conn
         .query_row(
-            "SELECT COALESCE(SUM(is_correct), 0) FROM practice_records",
+            "SELECT
+                (SELECT COUNT(*) FROM banks),
+                (SELECT COUNT(*) FROM questions),
+                (SELECT COALESCE(SUM(times_attempted), 0) FROM questions),
+                (SELECT COALESCE(SUM(times_correct), 0) FROM questions)",
             [],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .map_err(|e| e.to_string())?;
 
-    let today = Local::now().format("%Y-%m-%d").to_string();
+    let today = Local::now().date_naive();
+    let tomorrow = today.succ_opt().unwrap_or(today);
     let today_records: u32 = conn
         .query_row(
-            "SELECT COUNT(*) FROM practice_records WHERE timestamp LIKE ?1",
-            rusqlite::params![format!("{}%", today)],
+            "SELECT COUNT(*) FROM practice_records WHERE timestamp >= ?1 AND timestamp < ?2",
+            rusqlite::params![
+                today.format("%Y-%m-%d").to_string(),
+                tomorrow.format("%Y-%m-%d").to_string()
+            ],
             |row| row.get(0),
         )
         .map_err(|e| e.to_string())?;
@@ -314,18 +311,23 @@ pub fn get_global_stats(
         )
         .map_err(|e| e.to_string())?;
 
-    // 各题库统计
     let mut stmt = conn
         .prepare(
             "SELECT b.id, b.name,
-                    COUNT(DISTINCT q.id) as q_count,
-                    COUNT(DISTINCT pr.question_id) as attempted,
-                    COALESCE(SUM(CASE WHEN pr.is_correct = 1 THEN 1 ELSE 0 END), 0) as correct,
-                    COUNT(pr.id) as total_pr
+                    COALESCE(qs.q_count, 0),
+                    COALESCE(qs.attempted, 0),
+                    COALESCE(qs.correct, 0),
+                    COALESCE(qs.total_pr, 0)
              FROM banks b
-             LEFT JOIN questions q ON b.id = q.bank_id
-             LEFT JOIN practice_records pr ON b.id = pr.bank_id
-             GROUP BY b.id
+             LEFT JOIN (
+                 SELECT bank_id,
+                        COUNT(*) AS q_count,
+                        SUM(CASE WHEN times_attempted > 0 THEN 1 ELSE 0 END) AS attempted,
+                        COALESCE(SUM(times_correct), 0) AS correct,
+                        COALESCE(SUM(times_attempted), 0) AS total_pr
+                 FROM questions
+                 GROUP BY bank_id
+             ) qs ON qs.bank_id = b.id
              ORDER BY b.created_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -632,6 +634,26 @@ pub fn remove_from_wrong(
     .map_err(|e| format!("移出错题集失败: {}", e))?;
 
     Ok(())
+}
+
+/// 批量移出错题集
+#[tauri::command]
+pub fn batch_remove_from_wrong(
+    state: tauri::State<DbState>,
+    question_ids: Vec<String>,
+) -> Result<u32, String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut count = 0u32;
+    for id in &question_ids {
+        match conn.execute(
+            "DELETE FROM practice_records WHERE question_id = ?1 AND is_correct = 0",
+            rusqlite::params![id],
+        ) {
+            Ok(n) => count += n as u32,
+            Err(e) => return Err(format!("移出错题 {} 失败: {}", id, e)),
+        }
+    }
+    Ok(count)
 }
 
 /// 获取某题库中所有错题（有 is_correct=0 记录）的 ID 列表

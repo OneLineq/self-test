@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // ============================================================
-// 刷题助手 — 数据管理（数据库导入 / 导出 / 合并）
+// 理论训练考核系统 — 数据管理（数据库导入 / 导出 / 合并）
 // ============================================================
 import { onMounted, ref, computed, h } from 'vue'
 import { message, Modal } from 'ant-design-vue'
@@ -76,7 +76,7 @@ onMounted(() => {
 async function handleExport() {
   const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '').slice(0, 8)
     + '_' + new Date().toTimeString().slice(0, 8).replace(/:/g, '')
-  const defaultName = `刷题助手_备份_${ts}.db`
+  const defaultName = `理论训练考核系统_备份_${ts}.db`
   const path = await save({
     title: '导出数据库备份',
     defaultPath: defaultName,

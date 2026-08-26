@@ -80,6 +80,7 @@ fn main() {
             // 错题管理
             commands::practice::mark_question_wrong,
             commands::practice::remove_from_wrong,
+            commands::practice::batch_remove_from_wrong,
             commands::practice::list_wrong_question_ids,
         ])
         .run(tauri::generate_context!())

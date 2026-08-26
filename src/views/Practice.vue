@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // ============================================================
-// 刷题助手 — 练习页面（顺序/随机/错题）
+// 理论训练考核系统 — 练习页面（顺序/随机/错题）
 // ============================================================
 import { onMounted, onBeforeUnmount, ref, computed, watch, h } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
@@ -10,6 +10,7 @@ import {
   RightOutlined,
   CheckOutlined,
   CloseOutlined,
+  MinusOutlined,
   ExclamationCircleOutlined,
   DownOutlined,
   HistoryOutlined,
@@ -18,23 +19,29 @@ import {
   CloseCircleOutlined,
 } from '@ant-design/icons-vue'
 import { usePracticeStore } from '../stores/practice'
+import { usePreferencesStore } from '../stores/preferences'
 import { invoke } from '@tauri-apps/api/tauri'
-import { PracticeModeLabel, isChoiceType, isMultiAnswer } from '../types'
+import { PracticeModeLabel, isChoiceType, isMultiAnswer, loadTopicFilter, questionMatchesTopic } from '../types'
 import type { PracticeMode, PracticeMemoryItem } from '../types'
 
 const route = useRoute()
 const router = useRouter()
 const store = usePracticeStore()
+const prefs = usePreferencesStore()
 
 const bankId = route.params.bankId as string
 const mode = (route.query.mode as PracticeMode) || 'sequential'
+const isTopicPractice = route.query.topic === '1'
 const selectedAnswer = ref('')
 /** 不定项模式：选择题不区分单选/多选，可自由选择一项或多项后提交 */
-const indeterminateMode = ref(false)
+const indeterminateMode = ref(prefs.indeterminateMode)
 /** 打乱选项顺序模式 */
-const shuffleMode = ref(false)
+const shuffleMode = ref(prefs.shuffleOptions)
 /** 当前题目的选项排列映射：displayIdx → originalIdx */
 const optionShuffleMap = ref<number[]>([])
+
+// 从首选项同步「打乱答案顺序」默认值（仅进入时一次，当场改不写回）
+store.sortAnswerOrder = prefs.sortAnswerOrder
 
 /** 当前练习中已标记为错题的题目 ID 集合（用于 toggle 按钮显示） */
 const wrongSet = ref<Set<string>>(new Set())
@@ -130,7 +137,7 @@ function formatUserAnswer(item: PracticeMemoryItem): string {
 const progressLoaded = ref(false)
 
 async function saveProgress() {
-  if (mode !== 'sequential') return
+  if (mode !== 'sequential' || isTopicPractice) return
   try {
     await invoke('save_practice_progress', {
       bankId,
@@ -229,7 +236,33 @@ function handleKeydown(e: KeyboardEvent) {
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   try {
-    await store.loadQuestions(bankId, mode)
+    // 主题随机：先按顺序拉全量再过滤打乱，避免后端随机后再过滤题量不准
+    const loadMode: PracticeMode =
+      isTopicPractice && mode === 'random' ? 'sequential' : mode
+    await store.loadQuestions(bankId, loadMode)
+
+    if (isTopicPractice) {
+      const filter = loadTopicFilter(bankId)
+      if (!filter) {
+        message.warning('未找到主题筛选条件，请重新设置')
+        router.replace(`/topic/${bankId}`)
+        return
+      }
+      const filtered = store.questions.filter(q =>
+        questionMatchesTopic(q, filter.raw, filter.regex, filter.match),
+      )
+      if (filtered.length === 0) {
+        message.warning('没有匹配的题目')
+        router.replace(`/topic/${bankId}`)
+        return
+      }
+      store.setQuestions(filtered)
+      if (mode === 'random') {
+        store.shuffleQuestionOrder()
+      }
+      store.mode = mode
+    }
+
     // 加载该题库中已有的错题 ID，用于 toggle 按钮初始状态
     if (mode !== 'wrong') {
       try {
@@ -237,8 +270,8 @@ onMounted(async () => {
         wrongSet.value = new Set(ids)
       } catch (_) { /* 静默 */ }
     }
-    // 顺序练习：检测断点，弹窗让用户选择接续还是从头
-    if (mode === 'sequential') {
+    // 顺序练习：检测断点（主题练习题集已变，不走全库断点）
+    if (mode === 'sequential' && !isTopicPractice) {
       const savedIdx = await loadProgress()
       if (savedIdx !== null && savedIdx < store.totalCount && savedIdx > 0) {
         // 有断点，弹窗询问
@@ -386,7 +419,18 @@ function getOptionClass(optIndex: number): string {
     const isCorrect = store.isOptionCorrect(question.value, originalIdx)
     const saved = store.userAnswers.get(qid) || ''
     const isSelected = saved === letter || saved.split(',').filter(Boolean).includes(letter)
-    if (isCorrect) return 'option-correct'
+    if (isCorrect && isSelected) {
+      // 多选题且顺序敏感时，检查选项位置
+      const answer = question.value.answer
+      if (Array.isArray(answer) && !store.sortAnswerOrder) {
+        const userParts = saved.split(',').filter(Boolean)
+        const correctPos = answer.indexOf(letter)
+        const userPos = userParts.indexOf(letter)
+        if (correctPos !== userPos) return 'option-missed'
+      }
+      return 'option-correct'
+    }
+    if (isCorrect && !isSelected) return 'option-missed'
     if (isSelected && !isCorrect) return 'option-wrong'
     return ''
   }
@@ -533,6 +577,7 @@ function navDotStyle(idx: number): Record<string, string> {
     <div class="practice-header">
       <a-space>
         <a-tag color="blue">{{ PracticeModeLabel[mode] }}</a-tag>
+        <a-tag v-if="isTopicPractice" color="cyan">主题筛选</a-tag>
         <span>{{ store.currentIndex + 1 }} / {{ store.totalCount }}</span>
         <span style="color: #52c41a">✓ {{ store.correctCount }}</span>
       </a-space>
@@ -678,6 +723,7 @@ function navDotStyle(idx: number): Record<string, string> {
           <span class="option-text">{{ opt.replace(/^[A-D][.、]\s*/, '') }}</span>
           <CheckOutlined v-if="getOptionClass(displayIdx) === 'option-correct'" class="option-icon" />
           <CloseOutlined v-if="getOptionClass(displayIdx) === 'option-wrong'" class="option-icon" />
+          <MinusOutlined v-if="getOptionClass(displayIdx) === 'option-missed'" class="option-icon" />
         </div>
       </div>
 
@@ -897,6 +943,20 @@ function navDotStyle(idx: number): Record<string, string> {
 
 .option-correct .option-icon {
   color: #52c41a;
+}
+
+.option-missed {
+  border-color: #fa8c16 !important;
+  background: #fff7e6 !important;
+}
+
+.option-missed .option-letter {
+  background: #fa8c16;
+  color: #fff;
+}
+
+.option-missed .option-icon {
+  color: #fa8c16;
 }
 
 .option-wrong {

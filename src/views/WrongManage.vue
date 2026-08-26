@@ -1,17 +1,19 @@
 <script setup lang="ts">
 // ============================================================
-// 刷题助手 — 错题管理：查看并移出错题集
+// 理论训练考核系统 — 错题管理：查看并移出错题集
 // ============================================================
-import { onMounted, ref, h } from 'vue'
+import { onMounted, ref, computed, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
   ExclamationCircleOutlined,
   DeleteOutlined,
   CheckCircleOutlined,
+  SearchOutlined,
 } from '@ant-design/icons-vue'
 import { invoke } from '@tauri-apps/api/tauri'
 import type { Question } from '../types'
+import { questionTextMatches } from '../types'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,6 +22,44 @@ const bankName = route.query.name as string || ''
 
 const wrongQuestions = ref<Question[]>([])
 const loading = ref(false)
+const selectedIds = ref<Set<string>>(new Set())
+const questionKeyword = ref('')
+
+const filteredWrongQuestions = computed(() =>
+  wrongQuestions.value.filter(q => questionTextMatches(q, questionKeyword.value)),
+)
+
+const isAllSelected = computed(() =>
+  filteredWrongQuestions.value.length > 0
+  && filteredWrongQuestions.value.every(q => selectedIds.value.has(q.id)),
+)
+
+const selectedInFilteredCount = computed(() =>
+  filteredWrongQuestions.value.filter(q => selectedIds.value.has(q.id)).length,
+)
+
+function toggleSelect(id: string) {
+  const s = new Set(selectedIds.value)
+  if (s.has(id)) {
+    s.delete(id)
+  } else {
+    s.add(id)
+  }
+  selectedIds.value = s
+}
+
+function toggleSelectAll() {
+  if (isAllSelected.value) {
+    const filteredIds = new Set(filteredWrongQuestions.value.map(q => q.id))
+    selectedIds.value = new Set([...selectedIds.value].filter(id => !filteredIds.has(id)))
+  } else {
+    const s = new Set(selectedIds.value)
+    for (const q of filteredWrongQuestions.value) {
+      s.add(q.id)
+    }
+    selectedIds.value = s
+  }
+}
 
 onMounted(async () => {
   await loadWrongQuestions()
@@ -40,6 +80,30 @@ async function loadWrongQuestions() {
   } finally {
     loading.value = false
   }
+}
+
+/** 批量移出错题集 */
+async function handleBatchRemove() {
+  if (selectedIds.value.size === 0) return
+  Modal.confirm({
+    title: '批量移出错题集',
+    icon: h(ExclamationCircleOutlined),
+    content: `确定将选中的 ${selectedIds.value.size} 道题移出错题集吗？`,
+    okText: '批量移出',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        const count = await invoke<number>('batch_remove_from_wrong', {
+          questionIds: Array.from(selectedIds.value),
+        })
+        message.success(`已移出 ${count} 道错题`)
+        wrongQuestions.value = wrongQuestions.value.filter(wq => !selectedIds.value.has(wq.id))
+        selectedIds.value = new Set()
+      } catch (e) {
+        message.error('批量移出失败: ' + e)
+      }
+    },
+  })
 }
 
 /** 移出错题集 */
@@ -86,7 +150,32 @@ function formatAnswerText(q: Question, answer: string | string[]): string {
         <h2 style="margin: 0">错题管理</h2>
         <span v-if="bankName" style="color: #999; font-size: 14px">— {{ bankName }}</span>
       </a-space>
-      <span style="color: #999; font-size: 13px">共 {{ wrongQuestions.length }} 道错题</span>
+      <a-space>
+        <a-input
+          v-if="wrongQuestions.length > 0"
+          v-model:value="questionKeyword"
+          placeholder="搜索题干或选项"
+          allow-clear
+          style="width: 220px"
+        >
+          <template #prefix><SearchOutlined style="color: #bfbfbf" /></template>
+        </a-input>
+        <span style="color: #999; font-size: 13px">
+          共 {{ filteredWrongQuestions.length }} 道错题
+          <template v-if="filteredWrongQuestions.length !== wrongQuestions.length">
+            （筛选自 {{ wrongQuestions.length }} 题）
+          </template>
+        </span>
+        <a-button
+          v-if="wrongQuestions.length > 0"
+          size="small"
+          danger
+          :disabled="selectedIds.size === 0"
+          @click="handleBatchRemove"
+        >
+          <DeleteOutlined /> 批量移出错题集
+        </a-button>
+      </a-space>
     </div>
 
     <a-divider />
@@ -98,24 +187,49 @@ function formatAnswerText(q: Question, answer: string | string[]): string {
         </a-empty>
       </div>
 
-      <div v-else class="wrong-list">
-        <div
-          v-for="(q, idx) in wrongQuestions"
-          :key="q.id"
-          class="wrong-card"
-        >
-          <div class="wrong-card-header">
-            <span class="wrong-q-number">{{ idx + 1 }}.</span>
-            <a-tag v-if="q.type" size="small" color="orange">{{ q.type === 'single' ? '单选' : q.type === 'multiple' ? '多选' : q.type === 'judge' ? '判断' : q.type === 'fill' ? '填空' : q.type }}</a-tag>
-            <span class="wrong-stem">{{ q.stem }}</span>
-            <a-button
-              size="small"
-              danger
-              @click="removeFromWrong(q)"
-            >
-              <DeleteOutlined /> 移出错题集
-            </a-button>
-          </div>
+      <div v-else>
+        <div v-if="filteredWrongQuestions.length === 0" style="text-align: center; padding: 40px">
+          <a-empty description="未找到匹配错题" />
+        </div>
+        <template v-else>
+        <!-- 批量操作工具栏 -->
+        <div class="batch-toolbar">
+          <a-checkbox
+            :checked="isAllSelected"
+            :indeterminate="selectedInFilteredCount > 0 && !isAllSelected"
+            @change="toggleSelectAll"
+          >
+            全选
+          </a-checkbox>
+          <span style="color: #999; font-size: 13px; margin-left: 8px">
+            已选 {{ selectedIds.size }} 题
+          </span>
+        </div>
+
+        <div class="wrong-list">
+          <div
+            v-for="(q, idx) in filteredWrongQuestions"
+            :key="q.id"
+            class="wrong-card"
+            :class="{ 'wrong-card-selected': selectedIds.has(q.id) }"
+          >
+            <div class="wrong-card-header">
+              <a-checkbox
+                :checked="selectedIds.has(q.id)"
+                @change="toggleSelect(q.id)"
+                style="margin-right: 4px"
+              />
+              <span class="wrong-q-number">{{ idx + 1 }}.</span>
+              <a-tag v-if="q.type" size="small" color="orange">{{ q.type === 'single' ? '单选' : q.type === 'multiple' ? '多选' : q.type === 'judge' ? '判断' : q.type === 'fill' ? '填空' : q.type }}</a-tag>
+              <span class="wrong-stem">{{ q.stem }}</span>
+              <a-button
+                size="small"
+                danger
+                @click="removeFromWrong(q)"
+              >
+                <DeleteOutlined /> 移出错题集
+              </a-button>
+            </div>
 
           <!-- 选项 -->
           <div v-if="q.options.length > 0" class="wrong-options">
@@ -141,7 +255,9 @@ function formatAnswerText(q: Question, answer: string | string[]): string {
             <span style="color: #1890ff">💡 解析：</span>
             {{ q.explanation }}
           </div>
+          </div>
         </div>
+        </template>
       </div>
     </a-spin>
   </div>
@@ -176,6 +292,18 @@ function formatAnswerText(q: Question, answer: string | string[]): string {
 
 .wrong-card:hover {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.wrong-card-selected {
+  background: #fff2f0;
+  border-color: #ffa39e;
+}
+
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 8px 4px;
+  margin-bottom: 12px;
 }
 
 .wrong-card-header {

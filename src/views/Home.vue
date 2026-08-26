@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // ============================================================
-// 刷题助手 — 首页
+// 理论训练考核系统 — 首页
 // ============================================================
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -45,7 +45,7 @@ onMounted(() => {
 <template>
   <div>
     <a-alert
-      message="欢迎使用刷题助手"
+      message="欢迎使用理论训练考核系统"
       description="选择一个题库，然后选择练习模式开始刷题。支持顺序练习、随机练习、错题练习和模拟考试。"
       type="info"
       show-icon

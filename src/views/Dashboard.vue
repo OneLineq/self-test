@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // ============================================================
-// 刷题助手 — Dashboard 首页（全局统计 + 快速入口）
+// 理论训练考核系统 — Dashboard 首页（全局统计 + 快速入口）
 // ============================================================
 import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -13,13 +13,15 @@ import {
   ThunderboltOutlined,
   BugOutlined,
   FormOutlined,
+  FilterOutlined,
   RightOutlined,
   RiseOutlined,
   ExclamationCircleOutlined,
   RocketOutlined,
+  SearchOutlined,
 } from '@ant-design/icons-vue'
 import { useBankStore } from '../stores/bank'
-import { PracticeModeLabel } from '../types'
+import { PracticeModeLabel, bankNameMatches } from '../types'
 
 const router = useRouter()
 const bankStore = useBankStore()
@@ -45,6 +47,17 @@ interface GlobalStats {
 
 const stats = ref<GlobalStats | null>(null)
 const loading = ref(true)
+const bankKeyword = ref('')
+
+const filteredBanks = computed(() =>
+  bankStore.banks.filter(b => bankNameMatches(b.name, bankKeyword.value)),
+)
+
+const bankStatsById = computed(() => {
+  const map: Record<string, BankStats> = {}
+  for (const b of stats.value?.banks ?? []) map[b.id] = b
+  return map
+})
 
 const accuracy = computed(() => {
   if (!stats.value || stats.value.total_practice === 0) return 0
@@ -55,17 +68,15 @@ const modeCards = [
   { key: 'sequential', icon: BookOutlined, color: '#1890ff', bg: '#e6f7ff' },
   { key: 'random', icon: ThunderboltOutlined, color: '#722ed1', bg: '#f9f0ff' },
   { key: 'wrong', icon: BugOutlined, color: '#f5222d', bg: '#fff2f0' },
+  { key: 'topic', icon: FilterOutlined, color: '#13c2c2', bg: '#e6fffb' },
   { key: 'exam', icon: FormOutlined, color: '#fa8c16', bg: '#fff7e6' },
 ]
 
-onMounted(async () => {
-  try {
-    stats.value = await invoke<GlobalStats>('get_global_stats')
-  } catch (e) {
-    console.error('加载统计失败', e)
-  } finally {
-    loading.value = false
-  }
+onMounted(() => {
+  invoke<GlobalStats>('get_global_stats')
+    .then(v => { stats.value = v })
+    .catch(e => console.error('加载统计失败', e))
+    .finally(() => { loading.value = false })
   bankStore.fetchBanks()
 })
 
@@ -76,9 +87,16 @@ function goMode(mode: string) {
 function goBankPractice(bankId: string, mode: string) {
   if (mode === 'exam') {
     router.push(`/exam/${bankId}`)
+  } else if (mode === 'topic') {
+    router.push(`/topic/${bankId}`)
   } else {
     router.push(`/practice/${bankId}?mode=${mode}`)
   }
+}
+
+function modeLabel(key: string): string {
+  if (key === 'topic') return '主题练习'
+  return PracticeModeLabel[key as keyof typeof PracticeModeLabel] || key
 }
 
 function goBankManage(bankId: string) {
@@ -90,8 +108,8 @@ function goBankManage(bankId: string) {
   <div class="dashboard">
     <!-- 欢迎区 -->
     <a-alert
-      message="欢迎使用刷题助手"
-      description="选择练习模式开始刷题，或从下方题库快速进入。支持顺序练习、随机练习、错题练习和模拟考试。"
+      message="欢迎使用理论训练考核系统"
+      description="选择练习模式开始刷题，或从下方题库快速进入。支持顺序、随机、错题、主题筛选与模拟考试。"
       type="info"
       show-icon
       closable
@@ -190,7 +208,9 @@ function goBankManage(bankId: string) {
         :key="m.key"
         :xs="12"
         :sm="12"
-        :md="6"
+        :md="8"
+        :lg="8"
+        :xl="4"
       >
         <a-card
           hoverable
@@ -202,12 +222,13 @@ function goBankManage(bankId: string) {
             <component :is="m.icon" :style="{ fontSize: '24px', color: m.color }" />
             <div>
               <div style="font-weight: bold; font-size: 15px">
-                {{ PracticeModeLabel[m.key as keyof typeof PracticeModeLabel] }}
+                {{ modeLabel(m.key) }}
               </div>
               <div style="font-size: 12px; color: #999; margin-top: 2px">
                 <template v-if="m.key === 'sequential'">按题库顺序逐题练习</template>
                 <template v-else-if="m.key === 'random'">随机打乱题目顺序</template>
                 <template v-else-if="m.key === 'wrong'">只练习做错的题目</template>
+                <template v-else-if="m.key === 'topic'">关键词筛选后练习</template>
                 <template v-else-if="m.key === 'exam'">限时模拟考试模式</template>
               </div>
             </div>
@@ -217,7 +238,18 @@ function goBankManage(bankId: string) {
     </a-row>
 
     <!-- 题库列表（带统计） -->
-    <h3 style="margin-bottom: 12px">📚 题库概览</h3>
+    <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+      <h3 style="margin: 0">📚 题库概览</h3>
+      <a-input
+        v-if="bankStore.banks.length > 0"
+        v-model:value="bankKeyword"
+        placeholder="搜索题库名称"
+        allow-clear
+        style="width: 240px; margin-left: auto"
+      >
+        <template #prefix><SearchOutlined style="color: #bfbfbf" /></template>
+      </a-input>
+    </div>
     <a-spin :spinning="bankStore.loading">
       <div v-if="bankStore.banks.length === 0" style="text-align: center; padding: 40px">
         <a-empty description="还没有题库，快去创建吧！">
@@ -227,9 +259,13 @@ function goBankManage(bankId: string) {
         </a-empty>
       </div>
 
+      <div v-else-if="filteredBanks.length === 0" style="text-align: center; padding: 40px">
+        <a-empty description="未找到匹配题库" />
+      </div>
+
       <a-row :gutter="[16, 16]" v-else>
         <a-col
-          v-for="bank in bankStore.banks"
+          v-for="bank in filteredBanks"
           :key="bank.id"
           :xs="24"
           :sm="24"
@@ -249,12 +285,12 @@ function goBankManage(bankId: string) {
                 {{ bank.question_count }}
               </a-descriptions-item>
               <a-descriptions-item label="已练习">
-                {{ stats?.banks?.find(b => b.id === bank.id)?.attempted ?? 0 }} 题
+                {{ bankStatsById[bank.id]?.attempted ?? 0 }} 题
               </a-descriptions-item>
               <a-descriptions-item label="正确率">
-                <span v-if="(stats?.banks?.find(b => b.id === bank.id)?.total_practice ?? 0) > 0"
+                <span v-if="(bankStatsById[bank.id]?.total_practice ?? 0) > 0"
                   :style="{ color: '#52c41a' }">
-                  {{ Math.round(((stats?.banks?.find(b => b.id === bank.id)?.correct ?? 0) / (stats?.banks?.find(b => b.id === bank.id)?.total_practice ?? 1)) * 100) }}%
+                  {{ Math.round(((bankStatsById[bank.id]?.correct ?? 0) / (bankStatsById[bank.id]?.total_practice ?? 1)) * 100) }}%
                 </span>
                 <span v-else style="color: #999">—</span>
               </a-descriptions-item>
@@ -270,11 +306,11 @@ function goBankManage(bankId: string) {
                 :key="m.key"
                 size="small"
                 :style="{ borderColor: m.color, color: m.color }"
-                :disabled="bank.question_count === 0 && m.key !== 'wrong'"
+                :disabled="bank.question_count === 0 || (m.key === 'wrong' && bank.wrong_count === 0)"
                 @click="goBankPractice(bank.id, m.key)"
               >
                 <component :is="m.icon" />
-                {{ PracticeModeLabel[m.key as keyof typeof PracticeModeLabel] }}
+                {{ modeLabel(m.key) }}
               </a-button>
             </a-space>
           </a-card>

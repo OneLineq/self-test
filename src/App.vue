@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // ============================================================
-// 刷题助手 — 根布局（侧边导航 + 内容区）
+// 理论训练考核系统 — 根布局（侧边导航 + 内容区）
 // ============================================================
 import { h, computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -13,10 +13,12 @@ import {
   ThunderboltOutlined,
   BugOutlined,
   FormOutlined,
+  FilterOutlined,
   QuestionCircleOutlined,
   ExclamationCircleOutlined,
   ClockCircleOutlined,
   DatabaseOutlined,
+  SettingOutlined,
 } from '@ant-design/icons-vue'
 import type { MenuProps } from 'ant-design-vue'
 import { usePracticeStore } from './stores/practice'
@@ -24,6 +26,12 @@ import { usePracticeStore } from './stores/practice'
 const router = useRouter()
 const route = useRoute()
 const collapsed = ref(false)
+
+const settingsActive = computed(() => route.path === '/settings')
+
+function goSettings() {
+  onMenuClick({ key: '/settings' })
+}
 
 const menuItems: MenuProps['items'] = [
   { key: '/', icon: () => h(DashboardOutlined), label: '数据看板' },
@@ -37,6 +45,7 @@ const menuItems: MenuProps['items'] = [
       { key: '/sequential', icon: () => h(BookOutlined), label: '顺序练习' },
       { key: '/random', icon: () => h(ThunderboltOutlined), label: '随机练习' },
       { key: '/wrong', icon: () => h(BugOutlined), label: '错题练习' },
+      { key: '/topic', icon: () => h(FilterOutlined), label: '主题练习' },
       { key: '/exam', icon: () => h(FormOutlined), label: '模拟考试' },
     ],
   },
@@ -86,14 +95,14 @@ function onMenuClick({ key }: { key: string }) {
     <a-layout-sider
       v-model:collapsed="collapsed"
       collapsible
-      :style="{ overflow: 'auto', height: '100vh', position: 'fixed', left: 0, top: 0, bottom: 0 }"
+      :style="{ overflow: 'hidden', height: '100vh', position: 'fixed', left: 0, top: 0, bottom: 0 }"
     >
       <div class="logo">
         <span v-if="!collapsed">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" style="margin-right: 8px; vertical-align: middle">
             <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
           </svg>
-          刷题助手
+          理论训练考核系统
         </span>
         <span v-else>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" style="vertical-align: middle">
@@ -108,6 +117,18 @@ function onMenuClick({ key }: { key: string }) {
         :items="menuItems"
         @click="onMenuClick"
       />
+      <div
+        class="settings-entry"
+        :class="{ 'settings-entry--active': settingsActive, 'settings-entry--collapsed': collapsed }"
+        @click="goSettings"
+      >
+        <SettingOutlined />
+        <span v-if="!collapsed">设置</span>
+      </div>
+      <div class="brand-mark" :class="{ 'brand-mark--collapsed': collapsed }">
+        <template v-if="!collapsed">南太武制<br>开发人员李孟谦</template>
+        <template v-else>南太武制</template>
+      </div>
     </a-layout-sider>
 
     <a-layout :style="{ marginLeft: collapsed ? '80px' : '200px', transition: 'margin-left 0.2s', minWidth: 0 }">
@@ -118,7 +139,7 @@ function onMenuClick({ key }: { key: string }) {
           borderBottom: '1px solid #f0f0f0',
         }"
       >
-        <h2 style="margin: 0; line-height: 64px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">刷题助手</h2>
+        <h2 style="margin: 0; line-height: 64px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">理论训练考核系统</h2>
       </a-layout-header>
       <a-layout-content
         :style="{
@@ -218,5 +239,72 @@ function onMenuClick({ key }: { key: string }) {
   font-size: 18px;
   font-weight: bold;
   white-space: nowrap;
+}
+
+.ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ant-layout-sider .ant-menu {
+  flex: 1;
+  overflow: auto;
+}
+
+.settings-entry {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 8px;
+  padding: 10px 16px;
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  border-radius: 6px;
+  user-select: none;
+  transition: color 0.2s, background 0.2s;
+}
+
+.settings-entry:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-entry--active {
+  color: #fff;
+  background: #1890ff;
+}
+
+.settings-entry--active:hover {
+  background: #1890ff;
+}
+
+.settings-entry--collapsed {
+  justify-content: center;
+  padding: 10px 0;
+  gap: 0;
+}
+
+.brand-mark {
+  flex-shrink: 0;
+  padding: 12px 12px 16px;
+  text-align: center;
+  color: #ffd666;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.75;
+  letter-spacing: 1px;
+  border-top: 1px solid rgba(255, 214, 102, 0.28);
+  text-shadow: 0 0 10px rgba(255, 214, 102, 0.5);
+  user-select: none;
+}
+
+.brand-mark--collapsed {
+  font-size: 11px;
+  letter-spacing: 0;
+  padding: 8px 4px 12px;
+  line-height: 1.4;
 }
 </style>

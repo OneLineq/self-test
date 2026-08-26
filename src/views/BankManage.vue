@@ -1,17 +1,19 @@
 <script setup lang="ts">
 // ============================================================
-// 刷题助手 — 题库管理
+// 理论训练考核系统 — 题库管理
 // ============================================================
-import { onMounted, ref, h } from 'vue'
+import { onMounted, ref, computed, h } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
   ExclamationCircleOutlined,
+  SearchOutlined,
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import { useBankStore } from '../stores/bank'
+import { bankNameMatches } from '../types'
 
 const router = useRouter()
 const bankStore = useBankStore()
@@ -19,6 +21,11 @@ const createVisible = ref(false)
 const renameVisible = ref(false)
 const newName = ref('')
 const editingBank = ref<{ id: string; name: string } | null>(null)
+const bankKeyword = ref('')
+
+const filteredBanks = computed(() =>
+  bankStore.banks.filter(b => bankNameMatches(b.name, bankKeyword.value)),
+)
 
 onMounted(() => {
   bankStore.fetchBanks()
@@ -82,15 +89,23 @@ const columns = [
 
 <template>
   <div>
-    <div style="margin-bottom: 16px">
+    <div style="margin-bottom: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
       <a-button type="primary" @click="createVisible = true">
         <PlusOutlined /> 新建题库
       </a-button>
+      <a-input
+        v-model:value="bankKeyword"
+        placeholder="搜索题库名称"
+        allow-clear
+        style="width: 240px; margin-left: auto"
+      >
+        <template #prefix><SearchOutlined style="color: #bfbfbf" /></template>
+      </a-input>
     </div>
 
     <a-table
       :columns="columns"
-      :data-source="bankStore.banks"
+      :data-source="filteredBanks"
       :loading="bankStore.loading"
       row-key="id"
       :pagination="false"
