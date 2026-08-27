@@ -231,7 +231,7 @@ onBeforeUnmount(() => {
         <a-typography-title :level="4">一、基本流程</a-typography-title>
         <ol>
           <li><strong>创建题库</strong>：在「题库管理」页面新建题库，支持重命名和删除。可按名称搜索题库。</li>
-          <li><strong>添加题目</strong>：进入题库的「试题管理」页面，通过 Excel 批量导入（推荐），或逐题手动添加。</li>
+          <li><strong>添加题目</strong>：进入题库的「题目管理」页面，通过 Excel 批量导入（推荐），或逐题手动添加。</li>
           <li><strong>开始刷题</strong>：通过左侧菜单栏或数据看板进入练习模式，选择题库即可开始。</li>
           <li><strong>查看记忆</strong>：在「练习记忆」页面查看各题库的练习记录和统计数据。</li>
           <li><strong>备份数据</strong>：在「数据管理」页面导出 .db 备份，也可导入或合并其他备份。</li>
@@ -240,8 +240,8 @@ onBeforeUnmount(() => {
         <a-typography-title :level="4">二、页面导航</a-typography-title>
         <p>左侧菜单栏包含以下页面入口：</p>
         <ul>
-          <li><strong>数据看板</strong> — 全局统计（题库数、题目数、累计练习、正确率、今日练习、待复习错题数），练习模式快捷入口，题库概览（可按名称搜索）</li>
-          <li><strong>题库管理</strong> — 创建、重命名、删除题库，按名称搜索</li>
+          <li><strong>数据看板</strong> — 全局统计（题库数、题目数、累计练习、正确率、今日练习、待复习错题数），练习模式快捷入口，题库概览（可按名称搜索；卡片上的「题目管理」进入该题库题目列表）</li>
+          <li><strong>题库管理</strong> — 创建、重命名、删除题库，按名称搜索；「题目管理」进入该题库的题目列表</li>
           <li><strong>数据管理</strong> — 查看当前数据库、导出备份、导入替换或合并</li>
           <li><strong>顺序练习 / 随机练习 / 错题练习 / 主题练习 / 模拟考试</strong> — 练习模式快捷入口</li>
           <li><strong>练习记忆</strong> — 查看各题库的练习历史记录和统计</li>
@@ -306,7 +306,7 @@ onBeforeUnmount(() => {
               <li><strong>打乱选项顺序</strong>：每道题的选项随机排列，避免背位置。</li>
             </ul>
           </li>
-          <li><strong>标记为错题</strong>：作答后可在底部手动将该题加入错题集。</li>
+          <li><strong>标记为错题</strong>：作答错误后，底部按钮会立刻变为「移出错题集」。也可在答对后手动点「标记为错题」加入错题集。</li>
           <li><strong>移出错题集</strong>：错题练习时可将已掌握的题目移出。</li>
           <li><strong>刷题记忆面板</strong>：每道题上方可展开查看该题的历史作答、正确率、掌握程度（建议复习/已掌握），也可清除单道题记忆。</li>
         </ul>
@@ -321,8 +321,10 @@ onBeforeUnmount(() => {
           <li><strong>错题回顾</strong>：交卷后逐题展示正误、选项高亮（绿色=正确答案、红色=选错的选项）、你的答案与正确答案对比，以及解析。</li>
         </ul>
 
-        <a-typography-title :level="4">五、试题管理</a-typography-title>
-        <p>在「题库管理」页面点击某个题库的"管理"按钮，进入试题管理页面。</p>
+        <a-typography-title :level="4">五、题目管理</a-typography-title>
+        <p>
+          可从「题库管理」点击某个题库的「题目管理」，或从「数据看板」题库概览进入。页面左上角「返回」会回到进入前的页面（看板或题库管理）。
+        </p>
 
         <a-typography-title :level="5">5.1 手动添加/编辑</a-typography-title>
         <ul>
@@ -393,8 +395,9 @@ onBeforeUnmount(() => {
 
         <a-typography-title :level="4">十、选项颜色说明</a-typography-title>
         <ul>
-          <li><span style="color: #52c41a; font-weight: bold">绿色</span> — 正确答案</li>
+          <li><span style="color: #52c41a; font-weight: bold">绿色</span> — 正确答案（含单选 / 判断选错后标出的正确项）</li>
           <li><span style="color: #f5222d; font-weight: bold">红色</span> — 你选择了错误选项</li>
+          <li><span style="color: #fa8c16; font-weight: bold">橙色</span> — 多选题漏选的正确项</li>
         </ul>
 
         <a-typography-title :level="4">十一、数据存储</a-typography-title>

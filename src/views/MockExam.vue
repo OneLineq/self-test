@@ -377,7 +377,11 @@ function getReviewOptionClass(q: Question, idx: number): string {
     }
     return 'review-option-correct'
   }
-  if (isCorrectOpt && !isSelected) return 'review-option-missed'
+  if (isCorrectOpt && !isSelected) {
+    // 单选/判断：未选中的正确答案用绿色；多选漏选仍用橙色
+    if (q.type === 'single' || q.type === 'judge') return 'review-option-correct'
+    return 'review-option-missed'
+  }
   if (isSelected && !isCorrectOpt) return 'review-option-wrong'
   return ''
 }
@@ -581,15 +585,15 @@ function handleKeydown(e: KeyboardEvent) {
               </a-menu-item>
               <a-menu-item>
                 <a-space>
-                  <a-switch v-model:checked="shuffleMode" size="small" />
-                  <span>打乱选项顺序</span>
+                  <a-switch v-model:checked="store.sortAnswerOrder" size="small" />
+                  <span>打乱答案顺序</span>
                 </a-space>
               </a-menu-item>
               <a-menu-divider />
               <a-menu-item>
                 <a-space>
-                  <a-switch v-model:checked="store.sortAnswerOrder" size="small" />
-                  <span>打乱答案顺序</span>
+                  <a-switch v-model:checked="shuffleMode" size="small" />
+                  <span>打乱选项顺序</span>
                 </a-space>
               </a-menu-item>
             </a-menu>

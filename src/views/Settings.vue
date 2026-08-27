@@ -32,7 +32,7 @@ const entries = [
   {
     key: 'questions',
     title: '题目管理',
-    desc: '进入题库后管理试题（导入 / 编辑）',
+    desc: '进入题库后管理题目（导入 / 编辑）',
     icon: FileTextOutlined,
     path: '/banks',
   },

@@ -399,6 +399,7 @@ function selectOption(optIndex: number) {
     selectedAnswer.value = letter
     // 单选题直接提交
     store.submitAnswer(qid, letter)
+    syncWrongAfterSubmit(qid)
     // 正确则自动跳转下一题
     if (store.isAnswerCorrect(qid) && store.currentIndex < store.totalCount - 1) {
       setTimeout(() => handleNext(), 400)
@@ -430,7 +431,12 @@ function getOptionClass(optIndex: number): string {
       }
       return 'option-correct'
     }
-    if (isCorrect && !isSelected) return 'option-missed'
+    if (isCorrect && !isSelected) {
+      // 单选/判断：未选中的正确答案用绿色；多选漏选仍用橙色
+      const t = question.value.type
+      if (t === 'single' || t === 'judge') return 'option-correct'
+      return 'option-missed'
+    }
     if (isSelected && !isCorrect) return 'option-wrong'
     return ''
   }
@@ -446,6 +452,7 @@ function submitMulti() {
   if (!question.value || !selectedAnswer.value) return
   const qid = question.value.id
   store.submitAnswer(qid, selectedAnswer.value)
+  syncWrongAfterSubmit(qid)
   // 正确则自动跳转下一题
   if (store.isAnswerCorrect(qid) && store.currentIndex < store.totalCount - 1) {
     setTimeout(() => handleNext(), 400)
@@ -497,30 +504,41 @@ function exitPractice() {
   })
 }
 
+/** 答错后立刻把按钮切成「移出错题集」（与后端错题集规则一致） */
+function syncWrongAfterSubmit(qid: string) {
+  if (store.isAnswerCorrect(qid)) return
+  setWrongFlag(qid, true)
+}
+
+function setWrongFlag(qid: string, inSet: boolean) {
+  const next = new Set(wrongSet.value)
+  if (inSet) next.add(qid)
+  else next.delete(qid)
+  wrongSet.value = next
+}
+
+const isMarkedWrong = computed(() => {
+  const q = question.value
+  return !!q && wrongSet.value.has(q.id)
+})
+
 /** 切换当前题的错题标记状态 */
 async function toggleWrong() {
   const q = question.value
   if (!q) return
-  if (wrongSet.value.has(q.id)) {
-    // 已在错题集 → 移出
-    try {
+  const wasIn = wrongSet.value.has(q.id)
+  setWrongFlag(q.id, !wasIn)
+  try {
+    if (wasIn) {
       await invoke('remove_from_wrong', { questionId: q.id })
-      wrongSet.value.delete(q.id)
-      wrongSet.value = new Set(wrongSet.value) // 触发响应式
       message.success('已移出错题集')
-    } catch (e) {
-      message.error('移出失败: ' + e)
-    }
-  } else {
-    // 标记为错题
-    try {
+    } else {
       await invoke('mark_question_wrong', { questionId: q.id, bankId })
-      wrongSet.value.add(q.id)
-      wrongSet.value = new Set(wrongSet.value)
       message.success('已标记为错题')
-    } catch (e) {
-      message.error('标记失败: ' + e)
     }
+  } catch (e) {
+    setWrongFlag(q.id, wasIn)
+    message.error((wasIn ? '移出失败: ' : '标记失败: ') + e)
   }
 }
 
@@ -761,12 +779,12 @@ function navDotStyle(idx: number): Record<string, string> {
           <a-button
             v-if="mode !== 'wrong'"
             size="small"
-            :type="wrongSet.has(question.id) ? 'primary' : 'default'"
-            :danger="!wrongSet.has(question.id)"
-            :style="wrongSet.has(question.id) ? { background: '#f5222d', borderColor: '#f5222d', color: '#fff' } : {}"
+            :type="isMarkedWrong ? 'primary' : 'default'"
+            :danger="!isMarkedWrong"
+            :style="isMarkedWrong ? { background: '#f5222d', borderColor: '#f5222d', color: '#fff' } : {}"
             @click="toggleWrong"
           >
-            {{ wrongSet.has(question.id) ? '移出错题集' : '标记为错题' }}
+            {{ isMarkedWrong ? '移出错题集' : '标记为错题' }}
           </a-button>
           <a-button
             v-if="mode === 'wrong'"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // ============================================================
-// 理论训练考核系统 — 试题管理（含 Excel 导入导出）
+// 理论训练考核系统 — 题目管理（含 Excel 导入导出）
 // ============================================================
 import { onMounted, ref, reactive, computed, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -26,6 +26,10 @@ import { questionTextMatches } from '../types'
 const route = useRoute()
 const router = useRouter()
 const bankId = route.params.bankId as string
+
+function goBack() {
+  router.push(route.query.from === 'dashboard' ? '/' : '/banks')
+}
 
 const questions = ref<Question[]>([])
 const loading = ref(false)
@@ -298,13 +302,13 @@ function getOptionLabel(header: string): string | null {
 
 function isStemHeader(header: string): boolean {
   const h = header.trim().toLowerCase()
-  return /^题干$|^题目$|^试题$|^问题$|^stem$|^question$/i.test(h)
+  return /^题干$|^题目$|^题目$|^问题$|^stem$|^question$/i.test(h)
     || (/题干|题目/.test(h) && !/题型|类型/.test(h))
 }
 
 function isTypeHeader(header: string): boolean {
   const h = header.trim().toLowerCase()
-  return /^题型$|^类型$|^试题类型$|^type$/i.test(h)
+  return /^题型$|^类型$|^题目类型$|^type$/i.test(h)
 }
 
 function isAnswerHeader(header: string): boolean {
@@ -564,7 +568,7 @@ const columns = [
   <div>
     <div style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center">
       <a-space>
-        <a-button @click="router.push('/')"><LeftOutlined /> 返回</a-button>
+        <a-button @click="goBack"><LeftOutlined /> 返回</a-button>
         <a-tag color="blue">{{ bankName }}</a-tag>
       </a-space>
       <a-space>

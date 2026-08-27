@@ -100,7 +100,7 @@ function modeLabel(key: string): string {
 }
 
 function goBankManage(bankId: string) {
-  router.push(`/questions/${bankId}`)
+  router.push(`/questions/${bankId}?from=dashboard`)
 }
 </script>
 
@@ -275,7 +275,7 @@ function goBankManage(bankId: string) {
           <a-card :title="bank.name" size="small" hoverable>
             <template #extra>
               <a-button type="link" size="small" @click="goBankManage(bank.id)">
-                管理 <RightOutlined />
+                题目管理 <RightOutlined />
               </a-button>
             </template>
 

@@ -113,8 +113,8 @@ const columns = [
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'action'">
           <a-space>
-            <a-button size="small" @click="router.push(`/questions/${record.id}`)" style="white-space: nowrap">
-              试题管理
+            <a-button size="small" @click="router.push(`/questions/${record.id}?from=banks`)" style="white-space: nowrap">
+              题目管理
             </a-button>
             <a-button size="small" @click="showRename(record)">
               <EditOutlined /> 重命名

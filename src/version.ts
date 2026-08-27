@@ -1,8 +1,8 @@
 // ============================================================
 // 应用版本信息（发版时与 package.json / tauri.conf.json / Cargo.toml 同步）
 // ============================================================
-export const APP_VERSION = '1.3.0'
-export const APP_UPDATED_AT = '2026-08-26'
+export const APP_VERSION = '1.3.1'
+export const APP_UPDATED_AT = '2026-08-27'
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 /** 更新说明（新版本写在数组前面） */
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '1.3.1',
+    date: '2026-08-27',
+    items: [
+      '数据看板题库概览入口改为「题目管理」；从看板进入题目管理后，返回回到数据看板；从题库管理进入则仍返回题库管理。',
+      '练习页「标记为错题」按钮实时同步：答错后立刻变为「移出错题集」，手动标记 / 移出无需等接口返回。',
+      '单选题、判断题选错后，正确答案改为绿色标识（多选题漏选仍为橙色）。',
+    ],
+  },
   {
     version: '1.3.0',
     date: '2026-08-26',
